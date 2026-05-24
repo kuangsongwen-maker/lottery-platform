@@ -260,13 +260,14 @@ class LotteryCrawler:
                          datetime.timedelta(days=num_months * 30)).strftime("%Y%m%d")
         return self._hk6_playwright_fetch([(start_date, end_date)])
 
-    def fetch_all_hk6(self, max_pages=4) -> list[dict]:
-        """分页抓取全部六合彩数据（单次 Playwright 会话）"""
+    def fetch_all_hk6(self, max_pages=10) -> list[dict]:
+        """分页抓取全部六合彩数据（60天/页，HKJC API限制查询范围~85天）"""
         import datetime
         today = datetime.date.today()
         ranges = []
+        day_span = 60
         for i in range(max_pages + 1):
-            ed = today - datetime.timedelta(days=90 * i)
-            sd = ed - datetime.timedelta(days=90)
+            ed = today - datetime.timedelta(days=day_span * i)
+            sd = ed - datetime.timedelta(days=day_span)
             ranges.append((sd.strftime("%Y%m%d"), ed.strftime("%Y%m%d")))
         return self._hk6_playwright_fetch(ranges)
