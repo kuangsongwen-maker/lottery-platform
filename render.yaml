@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: lottery-platform
+    env: python
+    buildCommand: |
+      pip install -r requirements.txt
+      python3 -m playwright install chromium 2>/dev/null || true
+    startCommand: |
+      python3 -m playwright install chromium 2>/dev/null || true
+      uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    autoDeploy: true

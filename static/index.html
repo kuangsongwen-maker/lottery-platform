@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>彩票数据平台</title>
+<link rel="stylesheet" href="/static/css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+</head>
+<body>
+<nav>
+  <div class="nav-inner">
+    <a class="brand" href="#" data-page="home">彩票数据平台</a>
+    <div class="nav-links">
+      <a href="#" data-page="home">首页</a>
+      <a href="#" data-page="lottery-ssq">双色球</a>
+      <a href="#" data-page="lottery-dlt">大乐透</a>
+      <a href="#" data-page="lottery-hk6">六合彩</a>
+      <a href="#" data-page="calculator">奖金计算器</a>
+      <a href="#" data-page="compare">号码对比</a>
+      <span class="nav-right">
+        <span id="nav-user" style="display:none"><a href="#" data-page="favorites">收藏</a> <a href="#" id="btn-logout">退出</a></span>
+        <a href="#" id="btn-show-login">登录</a>
+      </span>
+    </div>
+  </div>
+</nav>
+
+<div id="app" class="container">
+
+  <!-- ===== 首页 ===== -->
+  <div id="page-home" class="page active">
+    <h1>最新开奖</h1>
+    <div id="home-cards" class="card-grid"></div>
+    <div class="disclaimer">彩票有风险，购彩需谨慎。本平台仅提供数据查询与分析，不提供购彩建议。</div>
+  </div>
+
+  <!-- ===== 彩种详情 ===== -->
+  <div id="page-lottery" class="page" style="display:none">
+    <h2 id="lottery-title"></h2>
+    <div class="tabs">
+      <button class="tab active" data-tab="draws">开奖列表</button>
+      <button class="tab" data-tab="search">号码搜索</button>
+      <button class="tab" data-tab="hotcold">冷热号统计</button>
+      <button class="tab" data-tab="predict">号码预测</button>
+    </div>
+
+    <div id="tab-draws" class="tab-content active">
+      <div id="draws-table-container"></div>
+      <div id="draws-pagination" class="pagination"></div>
+    </div>
+
+    <div id="tab-search" class="tab-content" style="display:none">
+      <div class="search-box">
+        <input type="text" id="search-input" placeholder="输入号码，逗号分隔，如 05,12,23">
+        <select id="search-match">
+          <option value="exact">精确匹配（同时出现）</option>
+          <option value="any">模糊匹配（任意出现）</option>
+        </select>
+        <button onclick="doNumberSearch()">搜索</button>
+      </div>
+      <div id="search-results"></div>
+      <div id="search-pagination" class="pagination"></div>
+      <div class="form-card" id="fav-section" style="margin-top:16px">
+        <h4 style="margin-bottom:8px">收藏号码</h4>
+        <div class="form-row">
+          <label>主号码</label>
+          <input type="text" id="fav-numbers" placeholder="逗号分隔，如 05,12,23,28,30,33">
+        </div>
+        <div class="form-row">
+          <label>特别号码</label>
+          <input type="text" id="fav-extra" placeholder="逗号分隔，如 07">
+        </div>
+        <div class="form-row">
+          <label>备注</label>
+          <input type="text" id="fav-note" placeholder="可选">
+        </div>
+        <button onclick="addFavoriteFromPage()">保存收藏</button>
+        <span id="fav-msg" class="msg" style="display:inline;margin-left:8px"></span>
+      </div>
+    </div>
+
+    <div id="tab-hotcold" class="tab-content" style="display:none">
+      <div class="search-box">
+        <input type="number" id="hotcold-range" value="50" min="10" max="500" style="width:100px">
+        <span style="font-size:13px;color:#888">期（10-500）</span>
+        <button onclick="doHotCold()">查看统计</button>
+      </div>
+      <div id="hotcold-chart" style="height:400px;margin-top:16px"></div>
+      <div id="hotcold-tables" class="card-grid"></div>
+    </div>
+
+    <div id="tab-predict" class="tab-content" style="display:none">
+      <div class="disclaimer" style="text-align:left;margin:0 0 12px;padding:8px 12px;background:#fff3cd;border-radius:6px;font-size:13px;color:#856404;font-weight:600">
+        ⚠ 预测仅供参考，不构成购彩建议。彩票有风险，请理性购彩。
+      </div>
+      <div class="form-card">
+        <div class="form-row">
+          <label>分析期数</label>
+          <input type="number" id="predict-range" value="200" min="5" max="1000" style="width:100px">
+          <span style="font-size:13px;color:#888">期（5-1000）</span>
+        </div>
+        <div class="form-row">
+          <label>预测方法</label>
+          <div style="display:flex;flex-wrap:wrap;gap:4px 12px">
+            <label style="font-weight:400;width:auto"><input type="checkbox" id="meth-hot" value="hot" checked> 热号法</label>
+            <label style="font-weight:400;width:auto"><input type="checkbox" id="meth-cold" value="cold"> 冷号法</label>
+            <label style="font-weight:400;width:auto"><input type="checkbox" id="meth-mix" value="mix" checked> 综合法</label>
+            <label style="font-weight:400;width:auto"><input type="checkbox" id="meth-random" value="random" checked> 纯随机法</label>
+            <label style="font-weight:400;width:auto"><input type="checkbox" id="meth-whot" value="whot" checked> 加权热号法</label>
+            <label style="font-weight:400;width:auto"><input type="checkbox" id="meth-oe" value="oe"> 奇偶比法</label>
+            <label style="font-weight:400;width:auto"><input type="checkbox" id="meth-bs" value="bs"> 大小号分布</label>
+            <label style="font-weight:400;width:auto"><input type="checkbox" id="meth-sum" value="sum"> 和值范围法</label>
+            <label style="font-weight:400;width:auto"><input type="checkbox" id="meth-markov" value="markov"> 马尔可夫链</label>
+            <label style="font-weight:400;width:auto"><input type="checkbox" id="meth-smart" value="smart" checked> 智能综合法</label>
+          </div>
+        </div>
+        <div class="form-row">
+          <label>生成注数</label>
+          <input type="number" id="predict-count" value="1" min="1" max="20" style="width:80px">
+          <span style="font-size:13px;color:#888">注（最多20注）</span>
+        </div>
+        <button onclick="doPredict()">生成预测</button>
+      </div>
+      <div id="predict-result"></div>
+    </div>
+  </div>
+
+  <!-- ===== 奖金计算器 ===== -->
+  <div id="page-calculator" class="page" style="display:none">
+    <h2>奖金计算器</h2>
+    <div class="form-card">
+      <div class="form-row">
+        <label>彩种</label>
+        <select id="calc-lottery"><option value="ssq">双色球</option><option value="dlt">大乐透</option><option value="hk6">六合彩</option></select>
+      </div>
+      <div class="form-row">
+        <label>期号</label>
+        <input type="text" id="calc-draw" placeholder="如 2024050，留空使用最新一期">
+      </div>
+      <div class="form-row">
+        <label id="calc-main-label">红球号码</label>
+        <input type="text" id="calc-numbers" placeholder="逗号分隔，如 05,12,23,28,30,33">
+      </div>
+      <div class="form-row">
+        <label id="calc-extra-label">蓝球号码</label>
+        <input type="text" id="calc-extra" placeholder="逗号分隔，如 07">
+      </div>
+      <button onclick="doPrizeCalc()">计算中奖</button>
+    </div>
+    <div id="calc-result" style="display:none"></div>
+  </div>
+
+  <!-- ===== 号码对比 ===== -->
+  <div id="page-compare" class="page" style="display:none">
+    <h2>号码对比</h2>
+    <div class="form-card">
+      <div class="form-row">
+        <label>彩种</label>
+        <select id="cmp-lottery"><option value="ssq">双色球</option><option value="dlt">大乐透</option><option value="hk6">六合彩</option></select>
+      </div>
+      <div class="form-row">
+        <label>期号</label>
+        <input type="text" id="cmp-draw" placeholder="如 2024050，留空使用最新一期">
+      </div>
+      <div class="form-row">
+        <label>号码（每行一注）</label>
+        <textarea id="cmp-input" rows="6" placeholder="每行一注：红球号码 | 蓝球号码&#10;如：&#10;05,12,23,28,30,33 | 07&#10;01,07,15,22,29 | 11"></textarea>
+      </div>
+      <button onclick="doCompare()">对比</button>
+    </div>
+    <div id="cmp-result" style="display:none"></div>
+  </div>
+
+  <!-- ===== 收藏管理 ===== -->
+  <div id="page-favorites" class="page" style="display:none">
+    <h2>我的收藏</h2>
+    <div id="fav-list"></div>
+  </div>
+
+</div>
+
+<!-- ===== 登录弹窗 ===== -->
+<div id="login-modal" class="modal-overlay" style="display:none">
+  <div class="modal">
+    <span class="modal-close">&times;</span>
+    <h3 id="login-modal-title">登录</h3>
+    <div class="form-card">
+      <div class="form-row">
+        <label>用户名</label>
+        <input type="text" id="login-username" placeholder="输入用户名">
+      </div>
+      <div class="form-row">
+        <label>密码</label>
+        <input type="password" id="login-password" placeholder="输入密码">
+      </div>
+      <div style="display:flex;gap:8px">
+        <button onclick="doLogin()">登录</button>
+        <button class="btn-secondary" onclick="doRegister()">注册</button>
+      </div>
+      <div id="login-msg" class="msg"></div>
+    </div>
+  </div>
+</div>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>
