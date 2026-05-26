@@ -506,12 +506,27 @@ def predict_numbers(
     range_periods: int = Query(200, alias="range", ge=5, le=1000),
     methods: str = Query("mix,random", alias="methods"),
     count: int = Query(1, ge=1, le=20),
+    dan: str = Query("", alias="dan"),
+    tuo: str = Query("", alias="tuo"),
     db: Session = Depends(get_db),
 ):
     """号码预测：多方法可选，支持组合，支持多注"""
     if lottery not in LOTTERY_CONFIG:
         raise HTTPException(404, "彩种不存在")
     cfg = LOTTERY_CONFIG[lottery]
+    is_hk6 = lottery == "hk6"
+
+    # 解析胆拖
+    dan_nums = [int(x.strip()) for x in dan.split(",") if x.strip().isdigit()]
+    tuo_nums = [int(x.strip()) for x in tuo.split(",") if x.strip().isdigit()]
+    # 过滤胆拖号码在有效范围内
+    dan_nums = [n for n in dan_nums if cfg["main_min"] <= n <= cfg["main_max"]]
+    tuo_nums = [n for n in tuo_nums if cfg["main_min"] <= n <= cfg["main_max"]]
+    # 胆 + 拖 不能超过主号码数量
+    if len(dan_nums) > cfg["main_count"]:
+        raise HTTPException(400, f"胆码数量不能超过 {cfg['main_count']}")
+    if len(dan_nums) + len(tuo_nums) > cfg["main_count"]:
+        tuo_nums = tuo_nums[:cfg["main_count"] - len(dan_nums)]
 
     if db.query(DrawRecord).filter_by(lottery_code=lottery).count() == 0:
         fetcher = (
@@ -572,6 +587,23 @@ def predict_numbers(
 
     def pick(pool, n):
         return sorted(random.sample(pool, min(n, len(pool))))
+
+    def _apply_dan_tuo(main_list):
+        """应用胆/拖约束：胆码必选，剩余从拖码+生成结果中补齐"""
+        result = list(dan_nums)
+        need = mc - len(result)
+        if need <= 0:
+            return sorted(result[:mc])
+        # 优先从拖码中选，再从生成结果中补
+        candidates = [n for n in tuo_nums if n not in result] + \
+                     [n for n in main_list if n not in result and n not in tuo_nums]
+        result.extend(candidates[:need])
+        # 如果还不够，从全体范围内随机补
+        while len(result) < mc:
+            n = random.choice(list(mr))
+            if n not in result:
+                result.append(n)
+        return sorted(result[:mc])
 
     # 各方法生成器
     def gen_hot():
@@ -768,24 +800,37 @@ def predict_numbers(
         for _ in range(count):
             for attempt in range(10):
                 mn, en = gen_fn()
+                # 应用胆拖约束
+                mn = _apply_dan_tuo(mn)
+                # HK6 不用输出特别号码
+                if is_hk6:
+                    en = []
                 key = f"{mn}|{en}"
                 if key not in seen:
                     seen.add(key)
-                    bets.append({"main_numbers": mn, "extra_numbers": en})
+                    if is_hk6:
+                        bets.append({"main_numbers": mn})
+                    else:
+                        bets.append({"main_numbers": mn, "extra_numbers": en})
                     break
         results[m] = {"name": mname, "description": mdesc, "bets": bets}
 
-    return {
+    resp = {
         "total_periods": total,
         "methods": methods_list,
         "count": count,
         "results": results,
         "hot_main": main_sorted[:20],
         "cold_main": main_cold[:20],
-        "hot_extra": extra_sorted[:10],
-        "cold_extra": extra_cold[:10],
         "disclaimer": "彩票有风险，购彩需谨慎。以上数据基于历史频率统计，仅供参考，不构成任何购彩建议。",
     }
+    if not is_hk6:
+        resp["hot_extra"] = extra_sorted[:10]
+        resp["cold_extra"] = extra_cold[:10]
+    if dan_nums or tuo_nums:
+        resp["dan_nums"] = dan_nums
+        resp["tuo_nums"] = tuo_nums
+    return resp
 
 
 # ========== 用户 API ==========

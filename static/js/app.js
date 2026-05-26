@@ -286,11 +286,16 @@ async function doPredict() {
     .join(",");
   if (!methods) { showMsg("predict-result", "请至少选择一种预测方法"); return; }
 
+  const dan = $("predict-dan").value.trim();
+  const tuo = $("predict-tuo").value.trim();
+
   const container = $("predict-result");
   container.innerHTML = "<p>分析中...</p>";
   try {
+    const danParam = dan ? `&dan=${encodeURIComponent(dan)}` : "";
+    const tuoParam = tuo ? `&tuo=${encodeURIComponent(tuo)}` : "";
     const data = await api("GET",
-      `/analysis/${currentLottery}/predict?range=${range}&methods=${methods}&count=${count}`);
+      `/analysis/${currentLottery}/predict?range=${range}&methods=${methods}&count=${count}${danParam}${tuoParam}`);
     const cfg = LOTTERY_LABELS[currentLottery];
     const methodColors = {hot:"#e74c3c", cold:"#3498db", mix:"#27ae60", random:"#f39c12",
       whot:"#e67e22", oe:"#9b59b6", bs:"#1abc9c", sum:"#34495e", markov:"#e84393", smart:"#2c3e50"};
@@ -309,7 +314,7 @@ async function doPredict() {
         html += `<div class="numbers-row" style="margin:4px 0">
           <span style="font-size:13px;color:#999;min-width:30px">#${i+1}</span>
           ${renderBalls(bet.main_numbers, "red")}
-          ${renderBalls(bet.extra_numbers, cfg.extra === "蓝球" ? "blue" : "gold")}
+          ${currentLottery !== "hk6" ? renderBalls(bet.extra_numbers, cfg.extra === "蓝球" ? "blue" : "gold") : ""}
         </div>`;
       });
       html += `</div>`;
