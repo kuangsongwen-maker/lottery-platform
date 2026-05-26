@@ -589,16 +589,20 @@ def predict_numbers(
         return sorted(random.sample(pool, min(n, len(pool))))
 
     def _apply_dan_tuo(main_list):
-        """应用胆/拖约束：胆码必选，剩余从拖码+生成结果中补齐"""
-        result = list(dan_nums)
-        need = mc - len(result)
-        if need <= 0:
-            return sorted(result[:mc])
-        # 优先从拖码中选，再从生成结果中补
-        candidates = [n for n in tuo_nums if n not in result] + \
-                     [n for n in main_list if n not in result and n not in tuo_nums]
-        result.extend(candidates[:need])
-        # 如果还不够，从全体范围内随机补
+        """胆码和拖码作为参考建议，优先考虑但不强制出现"""
+        # 优先级：胆码 > 预测生成 > 拖码 > 随机补全
+        preferred = []
+        seen = set()
+        for n in dan_nums:
+            if n not in seen and cfg["main_min"] <= n <= cfg["main_max"]:
+                preferred.append(n); seen.add(n)
+        for n in main_list:
+            if n not in seen:
+                preferred.append(n); seen.add(n)
+        for n in tuo_nums:
+            if n not in seen:
+                preferred.append(n); seen.add(n)
+        result = preferred[:mc]
         while len(result) < mc:
             n = random.choice(list(mr))
             if n not in result:
