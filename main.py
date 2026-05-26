@@ -589,25 +589,38 @@ def predict_numbers(
         return sorted(random.sample(pool, min(n, len(pool))))
 
     def _apply_dan_tuo(main_list):
-        """胆码和拖码作为参考建议，优先考虑但不强制出现"""
-        # 优先级：胆码 > 预测生成 > 拖码 > 随机补全
-        preferred = []
+        """胆码和拖码作为参考建议，通过加权随机影响预测但不强制出现"""
+        # 构建加权池：胆码权重最高，拖码次之，普通号码基础权重
+        pool = []
+        weights = []
         seen = set()
-        for n in dan_nums:
-            if n not in seen and cfg["main_min"] <= n <= cfg["main_max"]:
-                preferred.append(n); seen.add(n)
-        for n in main_list:
-            if n not in seen:
-                preferred.append(n); seen.add(n)
-        for n in tuo_nums:
-            if n not in seen:
-                preferred.append(n); seen.add(n)
-        result = preferred[:mc]
-        while len(result) < mc:
-            n = random.choice(list(mr))
-            if n not in result:
-                result.append(n)
-        return sorted(result[:mc])
+        for n in range(cfg["main_min"], cfg["main_max"] + 1):
+            pool.append(n)
+            if n in dan_nums:
+                weights.append(100)
+            elif n in tuo_nums:
+                weights.append(30)
+            elif n in main_list:
+                weights.append(15)
+            else:
+                weights.append(5)
+        # 根据权重随机选号
+        selected = set()
+        total = sum(weights)
+        while len(selected) < mc:
+            r = random.randint(1, total)
+            acc = 0
+            for i, w in enumerate(weights):
+                acc += w
+                if r <= acc:
+                    selected.add(pool[i])
+                    break
+            # 移除已选的权重
+            for i, w in enumerate(weights):
+                if pool[i] in selected:
+                    total -= weights[i]
+                    weights[i] = 0
+        return sorted(selected)
 
     # 各方法生成器
     def gen_hot():
