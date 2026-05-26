@@ -33,6 +33,7 @@ function qsa(sel) { return document.querySelectorAll(sel); }
 function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
 
 function renderBalls(nums, cls = "red") {
+  if (!nums || !nums.length) return "";
   return nums.map(n => `<span class="ball ${cls}">${String(n).padStart(2, "0")}</span>`).join("");
 }
 
@@ -320,17 +321,19 @@ async function doPredict() {
       html += `</div>`;
     }
 
+    const hotMain = data.hot_main || [];
+    const coldMain = data.cold_main || [];
     // 参考统计
     html += `<div class="card-grid" style="grid-template-columns:1fr 1fr;margin-top:8px">
       <div class="card">
         <h4 style="margin-bottom:8px">热号 TOP10</h4>
-        <div style="font-size:13px">${data.hot_main.slice(0, 10).map(h =>
+        <div style="font-size:13px">${hotMain.slice(0, 10).map(h =>
           `<span style="display:inline-block;margin:2px 4px">${h.number} <small style="color:#e74c3c">(${h.frequency}次)</small></span>`
         ).join("")}</div>
       </div>
       <div class="card">
         <h4 style="margin-bottom:8px">遗漏最久的号码</h4>
-        <div style="font-size:13px">${data.cold_main.slice(0, 5).map(h =>
+        <div style="font-size:13px">${coldMain.slice(0, 5).map(h =>
           `<span style="display:inline-block;margin:2px 4px">${h.number} <small style="color:#888">(遗漏${h.missing}期)</small></span>`
         ).join("")}</div>
       </div>
