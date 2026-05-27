@@ -65,8 +65,17 @@ def _auto_seed():
                             db2.add(DrawRecord(**r))
                             existing.add(r["draw_number"])
                             new_count += 1
-                    if new_count:
-                        db2.commit()
+                        else:
+                            # 在线数据覆盖手动录入
+                            rec = db2.query(DrawRecord).filter_by(
+                                lottery_code=code, draw_number=r["draw_number"]).first()
+                            if rec:
+                                rec.numbers = r["numbers"]
+                                rec.extra_numbers = r["extra_numbers"]
+                                rec.draw_date = r["draw_date"]
+                                if "prize_pool" in r: rec.prize_pool = r["prize_pool"]
+                                if "sales" in r: rec.sales = r["sales"]
+                    db2.commit()
                     print(f"[启动] {LOTTERY_CONFIG[code]['name']}: 新增 {new_count} 期")
             except Exception as e:
                 print(f"[启动] 更新数据异常: {e}")

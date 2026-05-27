@@ -107,6 +107,7 @@ document.addEventListener("click", e => {
   if (currentTab === "hotcold") doHotCold();
   if (currentTab === "predict") doPredict();
   if (currentTab === "search") { /* 等待用户输入 */ }
+  if (currentTab === "manual" && !token) { showMsg("manual-msg", "请先登录后手动录入"); $("btn-show-login").click(); }
 });
 
 /* ====== 首页 ====== */
@@ -425,8 +426,6 @@ function updateUserUI() {
         <a href="#" data-page="favorites">收藏</a>
         <a href="#" id="btn-logout">退出</a>`;
       $("btn-logout").onclick = e => { e.preventDefault(); logout(); };
-    const manualBtn = $("tab-btn-manual");
-    if (manualBtn) manualBtn.style.display = "";
     }).catch(() => { token = null; localStorage.removeItem("lottery_token"); updateUserUI(); });
   } else {
     navUser.style.display = "none";
@@ -572,6 +571,8 @@ async function doManualAdd() {
     showMsg("manual-msg", data.message, false);
     $("manual-draw").value = ""; $("manual-date").value = "";
     $("manual-numbers").value = ""; $("manual-extra").value = "";
+    // 刷新开奖列表
+    if (currentLottery === lottery) loadDrawsList(1);
   } catch (e) {
     showMsg("manual-msg", e.message);
   } finally {
