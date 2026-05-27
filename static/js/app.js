@@ -425,10 +425,14 @@ function updateUserUI() {
         <a href="#" data-page="favorites">收藏</a>
         <a href="#" id="btn-logout">退出</a>`;
       $("btn-logout").onclick = e => { e.preventDefault(); logout(); };
+    const manualBtn = $("tab-btn-manual");
+    if (manualBtn) manualBtn.style.display = "";
     }).catch(() => { token = null; localStorage.removeItem("lottery_token"); updateUserUI(); });
   } else {
     navUser.style.display = "none";
     loginBtn.style.display = "inline";
+    const manualBtn = $("tab-btn-manual");
+    if (manualBtn) manualBtn.style.display = "none";
   }
 }
 
@@ -544,6 +548,35 @@ async function quickFav(lottery, drawNumber) {
     alert("收藏成功！");
   } catch (e) {
     alert("收藏失败: " + e.message);
+  }
+}
+
+/* ====== 手动录入 ====== */
+async function doManualAdd() {
+  const btn = document.querySelector("#manual-form button");
+  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = "保存中...";
+  try {
+    const lottery = $("manual-lottery").value;
+    const drawNumber = $("manual-draw").value.trim();
+    const drawDate = $("manual-date").value;
+    const nums = $("manual-numbers").value.trim().split(",").map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+    const extra = $("manual-extra").value.trim().split(",").map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+    if (!drawNumber || !drawDate) { showMsg("manual-msg", "请填写期号和日期"); btn.disabled = false; btn.textContent = orig; return; }
+    if (nums.length === 0) { showMsg("manual-msg", "请填写主号码"); btn.disabled = false; btn.textContent = orig; return; }
+    const data = await api("POST", "/draws/manual", {
+      lottery, draw_number: drawNumber, draw_date: drawDate,
+      numbers: nums, extra_numbers: extra,
+    });
+    showMsg("manual-msg", data.message, false);
+    $("manual-draw").value = ""; $("manual-date").value = "";
+    $("manual-numbers").value = ""; $("manual-extra").value = "";
+  } catch (e) {
+    showMsg("manual-msg", e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
   }
 }
 
