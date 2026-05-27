@@ -42,12 +42,10 @@ app = FastAPI(title="彩票数据平台", version="0.1.0", lifespan=lifespan)
 # ========== 辅助函数 ==========
 
 def _auto_seed():
-    """启动时自动抓取近 200 期数据（仅首次）"""
+    """每次启动时自动更新最近缺失的开奖数据"""
     db = SessionLocal()
     try:
-        if db.query(DrawRecord).count() > 0:
-            return
-        print("[启动] 首次运行，后台抓取近 200 期数据...")
+        print("[启动] 检查并更新最新开奖数据...")
         def job():
             db2 = SessionLocal()
             try:
@@ -71,7 +69,7 @@ def _auto_seed():
                         db2.commit()
                     print(f"[启动] {LOTTERY_CONFIG[code]['name']}: 新增 {new_count} 期")
             except Exception as e:
-                print(f"[启动] 种子数据异常: {e}")
+                print(f"[启动] 更新数据异常: {e}")
                 db2.rollback()
             finally:
                 db2.close()
