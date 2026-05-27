@@ -852,17 +852,23 @@ def predict_numbers(
 
 @app.post("/api/users/register")
 def register(body: dict, db: Session = Depends(get_db)):
-    username = (body.get("username") or "").strip()
-    password = (body.get("password") or "").strip()
-    if len(username) < 2 or len(password) < 4:
-        raise HTTPException(400, "用户名至少2位，密码至少4位")
-    if db.query(User).filter(User.username == username).first():
-        raise HTTPException(409, "用户名已存在")
-    user = User(username=username, password_hash=pwd_ctx.hash(password))
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    return {"token": create_token(user.id), "user": {"id": user.id, "username": user.username}}
+    try:
+        username = (body.get("username") or "").strip()
+        password = (body.get("password") or "").strip()
+        if len(username) < 2 or len(password) < 4:
+            raise HTTPException(400, "用户名至少2位，密码至少4位")
+        if db.query(User).filter(User.username == username).first():
+            raise HTTPException(409, "用户名已存在")
+        user = User(username=username, password_hash=pwd_ctx.hash(password))
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        return {"token": create_token(user.id), "user": {"id": user.id, "username": user.username}}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[注册] 错误: {e}")
+        raise HTTPException(500, f"注册失败: {e}")
 
 
 @app.post("/api/users/login")
@@ -924,6 +930,49 @@ def delete_favorite(fav_id: int,
     db.delete(fav)
     db.commit()
     return {"message": "已取消收藏"}
+
+
+# ========== 手动录入 ==========
+
+@app.post("/api/draws/manual")
+def manual_add_draw(body: dict = None,
+                    user: User = Depends(get_current_user),
+                    db: Session = Depends(get_db)):
+    """手动录入开奖数据（用于六合彩等无法自动抓取的彩种）"""
+    lottery = body.get("lottery", "hk6")
+    if lottery not in LOTTERY_CONFIG:
+        raise HTTPException(400, "彩种不存在")
+    cfg = LOTTERY_CONFIG[lottery]
+    draw_number = str(body.get("draw_number", "")).strip()
+    draw_date = str(body.get("draw_date", "")).strip()
+    numbers = body.get("numbers", [])
+    extra_numbers = body.get("extra_numbers", [])
+    if not draw_number or not draw_date:
+        raise HTTPException(400, "期号和日期不能为空")
+    if len(numbers) != cfg["main_count"]:
+        raise HTTPException(400, f"主号码需要 {cfg['main_count']} 个")
+    if len(extra_numbers) != cfg["extra_count"]:
+        raise HTTPException(400, f"特别号码需要 {cfg['extra_count']} 个")
+    for n in numbers + extra_numbers:
+        if not (cfg["main_min"] <= n <= cfg["main_max"]):
+            raise HTTPException(400, f"号码 {n} 超出范围 [{cfg['main_min']}-{cfg['main_max']}]")
+    existing = db.query(DrawRecord).filter_by(
+        lottery_code=lottery, draw_number=draw_number).first()
+    if existing:
+        existing.numbers = json.dumps(numbers)
+        existing.extra_numbers = json.dumps(extra_numbers)
+        existing.draw_date = draw_date
+        msg = "已更新"
+    else:
+        db.add(DrawRecord(
+            lottery_code=lottery, draw_number=draw_number,
+            draw_date=draw_date,
+            numbers=json.dumps(numbers),
+            extra_numbers=json.dumps(extra_numbers),
+        ))
+        msg = "已添加"
+    db.commit()
+    return {"message": msg}
 
 
 # ========== 静态文件 ==========
