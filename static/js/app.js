@@ -177,15 +177,19 @@ async function loadDrawsList(page) {
   const container = $("draws-table-container");
   container.innerHTML = "<p>加载中...</p>";
   try {
-    const data = await api("GET", `/draws/${currentLottery}/latest?count=${PAGE_SIZE}`);
-    if (!data || data.length === 0) {
+    const offset = (page - 1) * PAGE_SIZE;
+    const data = await api("GET", `/draws/${currentLottery}/latest?count=${PAGE_SIZE}&offset=${offset}`);
+    if (!data || !data.draws || data.draws.length === 0) {
       container.innerHTML = "<p>暂无数据，后台正在抓取...</p>";
+      $("draws-pagination").innerHTML = "";
       return;
     }
+    drawsTotal = data.total;
     const cfg = LOTTERY_LABELS[currentLottery];
-    container.innerHTML = `<div class="table-wrap"><table>
+    container.innerHTML = `<p style="margin-bottom:8px;font-size:13px;color:#888">共 ${data.total} 期，第 ${page}/${Math.ceil(data.total / PAGE_SIZE)} 页</p>
+      <div class="table-wrap"><table>
       <thead><tr><th>期号</th><th>日期</th><th>${cfg.main}号码</th><th>${cfg.extra}号码</th><th>操作</th></tr></thead>
-      <tbody>${data.map(d => `<tr>
+      <tbody>${data.draws.map(d => `<tr>
         <td><strong>${esc(d.draw_number)}</strong></td>
         <td>${formatDate(d.draw_date)}</td>
         <td>${renderBalls(d.numbers, "red")}</td>
@@ -193,9 +197,20 @@ async function loadDrawsList(page) {
         <td><button class="btn-small btn-secondary" onclick="quickFav('${currentLottery}','${esc(d.draw_number)}')">收藏</button></td>
       </tr>`).join("")}</tbody>
     </table></div>`;
+    renderDrawsPagination();
   } catch (e) {
     container.innerHTML = `<p class="msg">加载失败: ${esc(e.message)}</p>`;
   }
+}
+
+function renderDrawsPagination() {
+  const totalPages = Math.ceil(drawsTotal / PAGE_SIZE);
+  if (totalPages <= 1) { $("draws-pagination").innerHTML = ""; return; }
+  let html = "";
+  for (let i = 1; i <= Math.min(totalPages, 50); i++) {
+    html += `<button class="${i === drawsPage ? 'active' : ''}" onclick="loadDrawsList(${i})">${i}</button>`;
+  }
+  $("draws-pagination").innerHTML = html;
 }
 
 /* ====== 号码搜索 ====== */

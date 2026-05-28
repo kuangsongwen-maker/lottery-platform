@@ -115,7 +115,9 @@ def main():
     r = requests.get(f"{args.url}/api/draws/hk6/latest?count={args.periods}", headers=headers)
     existing = set()
     if r.ok:
-        for d in r.json():
+        body = r.json()
+        draws = body if isinstance(body, list) else body.get("draws", [])
+        for d in draws:
             existing.add(d["draw_number"])
     print(f"已存在 {len(existing)} 期")
 

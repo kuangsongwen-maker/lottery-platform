@@ -268,12 +268,15 @@ def get_draw(lottery: str,
 
 
 @app.get("/api/draws/{lottery}/latest")
-def latest_draws(lottery: str, count: int = Query(10, ge=1, le=200),
+def latest_draws(lottery: str, count: int = Query(20, ge=1, le=200),
+                 offset: int = Query(0, ge=0),
                  db: Session = Depends(get_db)):
     if lottery not in LOTTERY_CONFIG:
         raise HTTPException(404, "彩种不存在")
+
+    total = db.query(DrawRecord).filter_by(lottery_code=lottery).count()
     recs = db.query(DrawRecord).filter_by(lottery_code=lottery) \
-        .order_by(desc(DrawRecord.draw_number)).limit(count).all()
+        .order_by(desc(DrawRecord.draw_number)).offset(offset).limit(count).all()
     if not recs:
         # 自动抓取
         fetcher = (
@@ -292,8 +295,9 @@ def latest_draws(lottery: str, count: int = Query(10, ge=1, le=200),
         if saved:
             db.commit()
             recs = db.query(DrawRecord).filter_by(lottery_code=lottery) \
-                .order_by(desc(DrawRecord.draw_number)).limit(count).all()
-    return [_format_draw(r) for r in recs]
+                .order_by(desc(DrawRecord.draw_number)).offset(offset).limit(count).all()
+            total = len(recs)
+    return {"total": total, "draws": [_format_draw(r) for r in recs]}
 
 
 @app.get("/api/draws/{lottery}/search")
