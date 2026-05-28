@@ -30,10 +30,22 @@ crawler = LotteryCrawler()
 
 # ========== 应用生命周期 ==========
 
+REFRESH_INTERVAL = 6 * 3600  # 6小时
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
     _auto_seed()
+    # 定时刷新
+    def _periodic_refresh():
+        while True:
+            threading.Event().wait(REFRESH_INTERVAL)
+            try:
+                _auto_seed()
+            except Exception as e:
+                print(f"[定时] 刷新异常: {e}")
+    t = threading.Thread(target=_periodic_refresh, daemon=True)
+    t.start()
     yield
 
 app = FastAPI(title="彩票数据平台", version="0.1.0", lifespan=lifespan)
@@ -939,6 +951,46 @@ def delete_favorite(fav_id: int,
     db.delete(fav)
     db.commit()
     return {"message": "已取消收藏"}
+
+
+# ========== 手动刷新 ==========
+
+@app.post("/api/refresh")
+def refresh_data(db: Session = Depends(get_db)):
+    """手动触发数据刷新"""
+    from threading import Thread
+    def job():
+        db2 = SessionLocal()
+        try:
+            for code in ("ssq", "dlt", "hk6"):
+                existing = {r.draw_number for r in
+                            db2.query(DrawRecord.draw_number)
+                            .filter(DrawRecord.lottery_code == code).all()}
+                fetcher = (
+                    crawler.fetch_all_ssq if code == "ssq" else
+                    crawler.fetch_all_dlt if code == "dlt" else
+                    crawler.fetch_all_hk6
+                )
+                records = fetcher(max_pages=4)
+                for r in records:
+                    if r["draw_number"] not in existing:
+                        db2.add(DrawRecord(**r))
+                        existing.add(r["draw_number"])
+                    else:
+                        rec = db2.query(DrawRecord).filter_by(
+                            lottery_code=code, draw_number=r["draw_number"]).first()
+                        if rec:
+                            rec.numbers = r["numbers"]
+                            rec.extra_numbers = r["extra_numbers"]
+                            rec.draw_date = r["draw_date"]
+                db2.commit()
+        except Exception as e:
+            print(f"[手动刷新] 异常: {e}")
+            db2.rollback()
+        finally:
+            db2.close()
+    Thread(target=job, daemon=True).start()
+    return {"message": "数据刷新已启动，请在稍后查看"}
 
 
 # ========== 手动录入 ==========

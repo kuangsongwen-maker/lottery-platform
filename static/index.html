@@ -31,6 +31,10 @@
   <!-- ===== 首页 ===== -->
   <div id="page-home" class="page active">
     <h1>最新开奖</h1>
+    <div style="text-align:right;margin-bottom:8px">
+      <button onclick="doRefresh()" id="btn-refresh" style="font-size:13px;padding:6px 14px">刷新数据</button>
+      <span id="refresh-msg" style="margin-left:8px;font-size:13px;color:#888"></span>
+    </div>
     <div id="home-cards" class="card-grid"></div>
     <div class="disclaimer">彩票有风险，购彩需谨慎。本平台仅提供数据查询与分析，不提供购彩建议。</div>
   </div>

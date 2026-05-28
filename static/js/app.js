@@ -134,6 +134,22 @@ async function loadHome() {
   }
 }
 
+async function doRefresh() {
+  const btn = $("btn-refresh");
+  const msg = $("refresh-msg");
+  if (btn) btn.disabled = true;
+  if (msg) msg.textContent = "刷新中...";
+  try {
+    const data = await api("POST", "/refresh");
+    if (msg) { msg.textContent = data.message; msg.style.color = "#27ae60"; }
+    setTimeout(() => loadHome(), 1000);
+  } catch (e) {
+    if (msg) { msg.textContent = e.message; msg.style.color = "#e74c3c"; }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 /* ====== 彩种详情 ====== */
 async function loadLottery(lottery) {
   currentLottery = lottery;
