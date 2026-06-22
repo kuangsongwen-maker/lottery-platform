@@ -261,13 +261,122 @@ class LotteryCrawler:
         return self._hk6_playwright_fetch([(start_date, end_date)])
 
     def fetch_all_hk6(self, max_pages=10) -> list[dict]:
-        """分页抓取全部六合彩数据（60天/页，HKJC API限制查询范围~85天）"""
-        import datetime
-        today = datetime.date.today()
-        ranges = []
-        day_span = 60
-        for i in range(max_pages + 1):
-            ed = today - datetime.timedelta(days=day_span * i)
-            sd = ed - datetime.timedelta(days=day_span)
-            ranges.append((sd.strftime("%Y%m%d"), ed.strftime("%Y%m%d")))
-        return self._hk6_playwright_fetch(ranges)
+        """分页抓取全部六合彩数据（使用 pilio.idv.tw，无需代理）"""
+        records = self.fetch_hk6_pilio(pages=max_pages)
+        if not records:
+            return records
+        # 按期号排序倒序分配期号：最旧→最新编排，再翻回最新→最旧
+        records.reverse()
+        from collections import defaultdict
+        year_counts = defaultdict(int)
+        for r in records:
+            year = r["draw_date"][:4]
+            year_counts[year] += 1
+            r["draw_number"] = f"{year[2:]}{year_counts[year]:03d}"
+        records.reverse()
+        return records
+
+    # ---------- 香港六合彩：新数据源（pil.io，无需代理）----------
+
+    def fetch_hk6_pilio(self, pages: int = 5) -> list[dict]:
+        """从 pilio.idv.tw 抓取六合彩数据（纯 HTML，无需代理）
+
+        Returns:
+            按日期从新到旧排列的记录，draw_number 为空字符串，
+            调用方需自行匹配已有记录或生成期号。
+        """
+        import urllib.request
+        from html.parser import HTMLParser
+        import re, datetime
+
+        class _HkParser(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.tables = []          # 所有表格，每个表格是 list[list[str]]
+                self._cur_table = None
+                self._in_table = False
+                self._in_tr = False
+                self._in_td = False
+                self._row = []
+                self._cell = ""
+            def handle_starttag(self, tag, attrs):
+                if tag == "table":
+                    self._cur_table = []
+                    self._in_table = True
+                elif tag == "tr" and self._in_table:
+                    self._row = []
+                    self._in_tr = True
+                elif tag == "td" and self._in_tr:
+                    self._in_td = True
+                    self._cell = ""
+            def handle_endtag(self, tag):
+                if tag == "table" and self._in_table:
+                    if self._cur_table:
+                        self.tables.append(self._cur_table)
+                    self._cur_table = None
+                    self._in_table = False
+                elif tag == "tr" and self._in_tr:
+                    if self._row:
+                        self._cur_table.append(self._row)
+                    self._in_tr = False
+                elif tag == "td" and self._in_td:
+                    self._row.append(self._cell.strip())
+                    self._in_td = False
+            def handle_data(self, data):
+                if self._in_td:
+                    self._cell += data
+
+        results = []
+        seen_dates = set()
+
+        for page in range(1, pages + 1):
+            url = f"https://www.pilio.idv.tw/ltohk/list.asp?indexpage={page}&orderby=new"
+            req = urllib.request.Request(url, headers={
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"})
+            try:
+                html = urllib.request.urlopen(req, timeout=15).read().decode("utf-8")
+            except Exception as e:
+                print(f"[爬虫] pilio 第{page}页请求异常: {e}")
+                continue
+
+            parser = _HkParser()
+            parser.feed(html)
+
+            # 处理所有表格中符合条件的行（3列，第一列是日期格式）
+            for table in parser.tables:
+                for row in table:
+                    if len(row) != 3:
+                        continue
+                    m = re.match(r"(\d{1,2})/(\d{2})(\d{2})\(", row[0])
+                    if not m:
+                        continue
+                    month, day, year_suffix = int(m.group(1)), int(m.group(2)), int(m.group(3))
+                    dt = datetime.date(2000 + year_suffix, month, day)
+                    date_key = dt.isoformat()
+                    if date_key in seen_dates:
+                        continue
+                    seen_dates.add(date_key)
+
+                    nums_raw = row[1].replace("\xa0", "").strip()
+                    try:
+                        numbers = [int(n.strip()) for n in nums_raw.split(",") if n.strip()]
+                    except ValueError:
+                        continue
+                    if len(numbers) != 6:
+                        continue
+                    try:
+                        special = int(row[2].strip())
+                    except ValueError:
+                        continue
+
+                    results.append({
+                        "lottery_code": "hk6",
+                        "draw_number": "",
+                        "draw_date": date_key,
+                        "numbers": json.dumps(numbers),
+                        "extra_numbers": json.dumps([special]),
+                        "prize_pool": "0",
+                        "sales": "0",
+                    })
+
+        return results

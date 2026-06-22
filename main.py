@@ -65,28 +65,55 @@ def _auto_seed():
                     existing = {r.draw_number for r in
                                 db2.query(DrawRecord.draw_number)
                                 .filter(DrawRecord.lottery_code == code).all()}
-                    fetcher = (
-                        crawler.fetch_all_ssq if code == "ssq" else
-                        crawler.fetch_all_dlt if code == "dlt" else
-                        crawler.fetch_all_hk6
-                    )
-                    records = fetcher(max_pages=4)
                     new_count = 0
-                    for r in records:
-                        if r["draw_number"] not in existing:
+
+                    if code == "hk6":
+                        # 六合彩使用 pilio 数据源（无需代理），按日期匹配
+                        records = crawler.fetch_hk6_pilio(pages=5)
+                        existing_dates = {
+                            r.draw_date for r in
+                            db2.query(DrawRecord.draw_date)
+                            .filter(DrawRecord.lottery_code == "hk6").all()
+                        }
+                        latest = (db2.query(DrawRecord)
+                                  .filter(DrawRecord.lottery_code == "hk6")
+                                  .order_by(DrawRecord.draw_number.desc()).first())
+                        next_num = int(latest.draw_number[2:]) + 1 if latest else 1
+                        year_prefix = datetime.now().strftime("%y")
+
+                        for r in records:
+                            if r["draw_date"] in existing_dates:
+                                rec = db2.query(DrawRecord).filter_by(
+                                    lottery_code="hk6", draw_date=r["draw_date"]).first()
+                                if rec:
+                                    rec.numbers = r["numbers"]
+                                    rec.extra_numbers = r["extra_numbers"]
+                                continue
+                            r["draw_number"] = f"{year_prefix}{next_num:03d}"
+                            next_num += 1
                             db2.add(DrawRecord(**r))
-                            existing.add(r["draw_number"])
                             new_count += 1
-                        else:
-                            # 在线数据覆盖手动录入
-                            rec = db2.query(DrawRecord).filter_by(
-                                lottery_code=code, draw_number=r["draw_number"]).first()
-                            if rec:
-                                rec.numbers = r["numbers"]
-                                rec.extra_numbers = r["extra_numbers"]
-                                rec.draw_date = r["draw_date"]
-                                if "prize_pool" in r: rec.prize_pool = r["prize_pool"]
-                                if "sales" in r: rec.sales = r["sales"]
+                    else:
+                        fetcher = (
+                            crawler.fetch_all_ssq if code == "ssq" else
+                            crawler.fetch_all_dlt
+                        )
+                        records = fetcher(max_pages=4)
+                        for r in records:
+                            if r["draw_number"] not in existing:
+                                db2.add(DrawRecord(**r))
+                                existing.add(r["draw_number"])
+                                new_count += 1
+                            else:
+                                rec = db2.query(DrawRecord).filter_by(
+                                    lottery_code=code, draw_number=r["draw_number"]).first()
+                                if rec:
+                                    rec.numbers = r["numbers"]
+                                    rec.extra_numbers = r["extra_numbers"]
+                                    rec.draw_date = r["draw_date"]
+                                    if "prize_pool" in r: rec.prize_pool = r["prize_pool"]
+                                    if "sales" in r: rec.sales = r["sales"]
+
                     db2.commit()
                     print(f"[启动] {LOTTERY_CONFIG[code]['name']}: 新增 {new_count} 期")
             except Exception as e:
@@ -659,16 +686,23 @@ def predict_numbers(
                pick(pe if len(pe) >= ec else [x["number"] for x in extra_cold], ec)
 
     def gen_mix():
-        hot_pool = [x["number"] for x in main_sorted[:mc + 3]]
-        result = hot_pool[:mc - 1]
-        for c in main_cold:
-            if c["number"] not in result:
-                result.append(c["number"])
-                break
-        for n in hot_pool:
-            if len(result) >= mc: break
-            if n not in result: result.append(n)
-        return sorted(result[:mc]), sorted([x["number"] for x in extra_sorted[:ec]])
+        """综合法：热号为主（约70%），冷号为辅（约30%），加随机"""
+        hot_pool = [x["number"] for x in main_sorted[:mc + 6]]
+        cold_pool = [x["number"] for x in main_cold[:mc + 6]]
+        hot_take = max(int(mc * 0.7), mc - 2)
+        cold_take = mc - hot_take
+        selected = pick(hot_pool, hot_take)
+        cold_candidates = [n for n in cold_pool if n not in selected]
+        if cold_candidates:
+            selected.extend(pick(cold_candidates, min(cold_take, len(cold_candidates))))
+        # 不足的从热号池补
+        remaining = [n for n in hot_pool if n not in selected]
+        random.shuffle(remaining)
+        while len(selected) < mc and remaining:
+            selected.append(remaining.pop(0))
+        # 特别号码：从高频中随机
+        extra_pool = [x["number"] for x in extra_sorted[:max(ec + 5, 10)]]
+        return sorted(selected[:mc]), pick(extra_pool, ec)
 
     def gen_rand():
         return pick(list(mr), mc), pick(list(er), ec)
