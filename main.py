@@ -35,7 +35,9 @@ REFRESH_INTERVAL = 6 * 3600  # 6小时
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    _auto_seed()
+    # 后台种子数据，不阻塞启动（PythonAnywhere 启动有超时限制）
+    t = threading.Thread(target=_auto_seed, daemon=True)
+    t.start()
     # 定时刷新
     def _periodic_refresh():
         while True:
@@ -44,8 +46,8 @@ async def lifespan(app: FastAPI):
                 _auto_seed()
             except Exception as e:
                 print(f"[定时] 刷新异常: {e}")
-    t = threading.Thread(target=_periodic_refresh, daemon=True)
-    t.start()
+    t2 = threading.Thread(target=_periodic_refresh, daemon=True)
+    t2.start()
     yield
 
 app = FastAPI(title="彩票数据平台", version="0.1.0", lifespan=lifespan)
