@@ -1074,10 +1074,13 @@ def manual_add_draw(body: dict = None,
     return {"message": msg}
 
 
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+
+
 # ========== 静态文件 ==========
 
 @app.get("/")
 def index():
-    return FileResponse("static/index.html")
+    return FileResponse(os.path.join(STATIC_DIR, "index.html"))
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
