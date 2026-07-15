@@ -1,9 +1,11 @@
 """数据库模型与操作"""
+import os
 from datetime import datetime
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-DATABASE_URL = "sqlite:///./lottery.db"
+_DB_DIR = os.path.dirname(os.path.abspath(__file__))
+DATABASE_URL = f"sqlite:///{os.path.join(_DB_DIR, 'lottery.db')}"
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
