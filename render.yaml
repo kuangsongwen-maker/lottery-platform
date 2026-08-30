@@ -2,6 +2,9 @@ services:
   - type: web
     name: lottery-platform
     env: docker
+    # 注意：plan: free 每 15 分钟无流量即休眠，唤醒约 1 分钟；
+    # 休眠时本地文件与后台定时任务一并清空，main.py 的 6 小时爬虫跑不起来。
+    # 需要数据自动更新的话改成 plan: starter（不休眠，约 $7/月）。
     plan: free
     region: singapore
     branch: main
