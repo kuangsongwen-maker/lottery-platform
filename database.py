@@ -5,8 +5,20 @@ from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, c
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 _DB_DIR = os.path.dirname(os.path.abspath(__file__))
-DATABASE_URL = f"sqlite:///{os.path.join(_DB_DIR, 'lottery.db')}"
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+_DEFAULT_SQLITE = f"sqlite:///{os.path.join(_DB_DIR, 'lottery.db')}"
+
+# 部署平台（Render / Neon / Supabase 等）注入 DATABASE_URL 时自动切到 PostgreSQL，
+# 本地开发不设该变量则继续用 SQLite，两边代码完全一致。
+DATABASE_URL = os.getenv("DATABASE_URL") or _DEFAULT_SQLITE
+# 部分平台仍给 postgres:// 旧前缀，SQLAlchemy 已不支持
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+_IS_SQLITE = DATABASE_URL.startswith("sqlite")
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": False} if _IS_SQLITE else {},
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

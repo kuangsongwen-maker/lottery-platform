@@ -9,3 +9,4 @@ bcrypt<4.1
 python-multipart==0.0.18
 aiosqlite
 a2wsgi
+psycopg2-binary==2.9.10

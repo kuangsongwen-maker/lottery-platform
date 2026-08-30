@@ -72,6 +72,8 @@ def _auto_seed():
                     if code == "hk6":
                         # 六合彩使用 pilio 数据源（无需代理），按日期匹配
                         records = crawler.fetch_hk6_pilio(pages=5)
+                        # 该数据源按日期倒序返回，须转为升序，否则期号会与日期反向倒挂
+                        records = sorted(records, key=lambda r: r["draw_date"])
                         existing_dates = {
                             r.draw_date for r in
                             db2.query(DrawRecord.draw_date)
@@ -80,8 +82,12 @@ def _auto_seed():
                         latest = (db2.query(DrawRecord)
                                   .filter(DrawRecord.lottery_code == "hk6")
                                   .order_by(DrawRecord.draw_number.desc()).first())
-                        next_num = int(latest.draw_number[2:]) + 1 if latest else 1
                         year_prefix = datetime.now().strftime("%y")
+                        # 跨年时序号必须归零，否则 26150 之后会错编成 27151
+                        if latest and latest.draw_number[:2] == year_prefix:
+                            next_num = int(latest.draw_number[2:]) + 1
+                        else:
+                            next_num = 1
 
                         for r in records:
                             if r["draw_date"] in existing_dates:

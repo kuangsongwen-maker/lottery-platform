@@ -1,8 +1,15 @@
 services:
   - type: web
     name: lottery-platform
-    env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    env: docker
+    plan: free
+    region: singapore
+    branch: main
     healthCheckPath: /
     autoDeploy: true
+    envVars:
+      # DATABASE_URL 留空时在 Render 控制台手动填写，避免密钥进仓库。
+      # 填了 PostgreSQL 连接串 -> 用 PG（数据持久，推荐）
+      # 不填                  -> 用镜像内置的 lottery.db（数据随镜像，容器重启不丢但新写入会丢）
+      - key: DATABASE_URL
+        sync: false
