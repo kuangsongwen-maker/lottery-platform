@@ -20,7 +20,12 @@ from database import (
 from crawler import LotteryCrawler
 
 # ========== 配置 ==========
-SECRET_KEY = os.getenv("JWT_SECRET", "lottery-platform-dev-secret-key-2024")
+# 生产环境务必通过环境变量 JWT_SECRET 注入（PythonAnywhere Web 后台 → Environment variables）。
+# 仅在本地开发且未设置环境变量时回退到内置开发密钥；切勿将真实密钥提交进仓库。
+SECRET_KEY = os.getenv("JWT_SECRET")
+if not SECRET_KEY:
+    SECRET_KEY = "lottery-platform-dev-secret-key-2024"
+    print("[警告] 未设置环境变量 JWT_SECRET，已使用内置开发密钥——生产环境请在 PA 后台配置后 Reload")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE = 30  # 天
 pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
