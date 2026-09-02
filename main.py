@@ -1,5 +1,5 @@
 """彩票数据平台 - 后端入口 (FastAPI + SQLite)"""
-import json, threading, os, random
+import json, threading, os, random, time
 from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
 
@@ -28,26 +28,116 @@ auth_scheme = HTTPBearer(auto_error=False)
 crawler = LotteryCrawler()
 
 
-# ========== 应用生命周期 ==========
+# ========== GitHub 中转数据同步 ==========
+# 免费 PythonAnywhere 账户出网走白名单代理，500.com / pilio.idv.tw 均被 403。
+# 数据改由 GitHub Actions 每天抓取并推到仓库 data/latest.json，
+# 本服务从 raw.githubusercontent.com（在白名单内）拉取入库。
+SYNC_JSON_URL = "https://raw.githubusercontent.com/kuangsongwen-maker/lottery-platform/main/data/latest.json"
+SYNC_INTERVAL = 6 * 3600  # 两次拉取最小间隔（秒）
+_SYNC_LOCK = threading.Lock()
+_SYNC_CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "synced_at.txt")
 
-REFRESH_INTERVAL = 6 * 3600  # 6小时
+
+def _load_last_sync() -> float:
+    try:
+        with open(_SYNC_CACHE) as f:
+            return float(f.read().strip())
+    except Exception:
+        return 0.0
+
+
+def _save_last_sync(ts: float):
+    try:
+        os.makedirs(os.path.dirname(_SYNC_CACHE), exist_ok=True)
+        with open(_SYNC_CACHE, "w") as f:
+            f.write(str(ts))
+    except Exception:
+        pass
+
+
+def ensure_synced(force: bool = False):
+    """从 GitHub raw 拉取最新开奖数据入库，带缓存避免每次请求都拉。"""
+    now = time.time()
+    if not force and now - _load_last_sync() < SYNC_INTERVAL:
+        return
+    with _SYNC_LOCK:
+        if not force and now - _load_last_sync() < SYNC_INTERVAL:
+            return
+        _pull_from_github()
+
+
+def _pull_from_github():
+    try:
+        import urllib.request, json as _json
+        req = urllib.request.Request(SYNC_JSON_URL, headers={"User-Agent": "lottery-platform"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            payload = _json.loads(r.read().decode("utf-8"))
+    except Exception as e:
+        print(f"[同步] 拉取 GitHub raw 失败: {e}")
+        return
+    db = SessionLocal()
+    try:
+        draws = payload.get("draws", {})
+        for code, records in draws.items():
+            _upsert_records(db, code, records)
+        db.commit()
+        _save_last_sync(time.time())
+        print(f"[同步] 已从 GitHub 更新 {sum(len(v) for v in draws.values())} 条记录")
+    except Exception as e:
+        print(f"[同步] 入库异常: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
+def _upsert_records(db, code, records):
+    """把 GitHub latest.json 并入本地库；hk6 按日期匹配并续编期号。
+
+    注意：SessionLocal 是 autoflush=False，不能在循环里反复查库取最新期号
+    （pending 记录查不到）。因此 hk6 一次性算出起始号，用本地计数器递增。
+    """
+    if code == "hk6":
+        latest = db.query(DrawRecord).filter_by(lottery_code="hk6") \
+                    .order_by(desc(DrawRecord.draw_number)).first()
+        yp = datetime.now().strftime("%y")
+        nxt = (int(latest.draw_number[2:]) + 1) if (latest and latest.draw_number[:2] == yp) else 1
+        for r in records:
+            exist = db.query(DrawRecord).filter_by(lottery_code="hk6",
+                                                   draw_date=r["draw_date"]).first()
+            if exist:
+                exist.numbers = r["numbers"]
+                exist.extra_numbers = r["extra_numbers"]
+                continue
+            db.add(DrawRecord(lottery_code="hk6", draw_number=f"{yp}{nxt:03d}",
+                              draw_date=r["draw_date"], numbers=r["numbers"],
+                              extra_numbers=r["extra_numbers"],
+                              prize_pool=r.get("prize_pool", "0"), sales=r.get("sales", "0")))
+            nxt += 1
+    else:
+        for r in records:
+            dn = r.get("draw_number")
+            exist = db.query(DrawRecord).filter_by(lottery_code=code,
+                                                   draw_number=dn).first()
+            if exist:
+                exist.numbers = r["numbers"]
+                exist.extra_numbers = r["extra_numbers"]
+                exist.draw_date = r["draw_date"]
+                exist.prize_pool = r.get("prize_pool")
+                exist.sales = r.get("sales")
+            else:
+                db.add(DrawRecord(lottery_code=code, draw_number=dn,
+                                  draw_date=r["draw_date"], numbers=r["numbers"],
+                                  extra_numbers=r["extra_numbers"],
+                                  prize_pool=r.get("prize_pool"), sales=r.get("sales")))
+
+
+# ========== 应用生命周期 ==========
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    # 后台种子数据，不阻塞启动（PythonAnywhere 启动有超时限制）
-    t = threading.Thread(target=_auto_seed, daemon=True)
-    t.start()
-    # 定时刷新
-    def _periodic_refresh():
-        while True:
-            threading.Event().wait(REFRESH_INTERVAL)
-            try:
-                _auto_seed()
-            except Exception as e:
-                print(f"[定时] 刷新异常: {e}")
-    t2 = threading.Thread(target=_periodic_refresh, daemon=True)
-    t2.start()
+    # 启动即尝试从 GitHub 同步一次（后台线程，不阻塞）
+    threading.Thread(target=ensure_synced, kwargs={"force": True}, daemon=True).start()
     yield
 
 app = FastAPI(title="彩票数据平台", version="0.1.0", lifespan=lifespan)
@@ -55,83 +145,7 @@ app = FastAPI(title="彩票数据平台", version="0.1.0", lifespan=lifespan)
 
 # ========== 辅助函数 ==========
 
-def _auto_seed():
-    """每次启动时自动更新最近缺失的开奖数据"""
-    db = SessionLocal()
-    try:
-        print("[启动] 检查并更新最新开奖数据...")
-        def job():
-            db2 = SessionLocal()
-            try:
-                for code in ("ssq", "dlt", "hk6"):
-                    existing = {r.draw_number for r in
-                                db2.query(DrawRecord.draw_number)
-                                .filter(DrawRecord.lottery_code == code).all()}
-                    new_count = 0
-
-                    if code == "hk6":
-                        # 六合彩使用 pilio 数据源（无需代理），按日期匹配
-                        records = crawler.fetch_hk6_pilio(pages=5)
-                        # 该数据源按日期倒序返回，须转为升序，否则期号会与日期反向倒挂
-                        records = sorted(records, key=lambda r: r["draw_date"])
-                        existing_dates = {
-                            r.draw_date for r in
-                            db2.query(DrawRecord.draw_date)
-                            .filter(DrawRecord.lottery_code == "hk6").all()
-                        }
-                        latest = (db2.query(DrawRecord)
-                                  .filter(DrawRecord.lottery_code == "hk6")
-                                  .order_by(DrawRecord.draw_number.desc()).first())
-                        year_prefix = datetime.now().strftime("%y")
-                        # 跨年时序号必须归零，否则 26150 之后会错编成 27151
-                        if latest and latest.draw_number[:2] == year_prefix:
-                            next_num = int(latest.draw_number[2:]) + 1
-                        else:
-                            next_num = 1
-
-                        for r in records:
-                            if r["draw_date"] in existing_dates:
-                                rec = db2.query(DrawRecord).filter_by(
-                                    lottery_code="hk6", draw_date=r["draw_date"]).first()
-                                if rec:
-                                    rec.numbers = r["numbers"]
-                                    rec.extra_numbers = r["extra_numbers"]
-                                continue
-                            r["draw_number"] = f"{year_prefix}{next_num:03d}"
-                            next_num += 1
-                            db2.add(DrawRecord(**r))
-                            new_count += 1
-                    else:
-                        fetcher = (
-                            crawler.fetch_all_ssq if code == "ssq" else
-                            crawler.fetch_all_dlt
-                        )
-                        records = fetcher(max_pages=4)
-                        for r in records:
-                            if r["draw_number"] not in existing:
-                                db2.add(DrawRecord(**r))
-                                existing.add(r["draw_number"])
-                                new_count += 1
-                            else:
-                                rec = db2.query(DrawRecord).filter_by(
-                                    lottery_code=code, draw_number=r["draw_number"]).first()
-                                if rec:
-                                    rec.numbers = r["numbers"]
-                                    rec.extra_numbers = r["extra_numbers"]
-                                    rec.draw_date = r["draw_date"]
-                                    if "prize_pool" in r: rec.prize_pool = r["prize_pool"]
-                                    if "sales" in r: rec.sales = r["sales"]
-
-                    db2.commit()
-                    print(f"[启动] {LOTTERY_CONFIG[code]['name']}: 新增 {new_count} 期")
-            except Exception as e:
-                print(f"[启动] 更新数据异常: {e}")
-                db2.rollback()
-            finally:
-                db2.close()
-        threading.Thread(target=job, daemon=True).start()
-    finally:
-        db.close()
+# _auto_seed() 已移除：自动刷新改由 ensure_synced() 经 GitHub 中转完成（见上方同步模块）。
 
 
 def create_token(user_id: int) -> str:
@@ -225,31 +239,10 @@ def _fetch_or_crawl(db: Session, lottery: str, draw_number: str) -> DrawRecord |
     rec = db.query(DrawRecord).filter_by(lottery_code=lottery, draw_number=draw_number).first()
     if rec:
         return rec
-    if lottery == "ssq":
-        records = crawler.fetch_ssq(num_periods=200)
-    elif lottery == "dlt":
-        records = crawler.fetch_dlt(num_periods=200)
-    else:
-        try:
-            records = crawler.fetch_all_hk6()
-        except Exception:
-            records = []
-    target = None
-    for r in records:
-        if r["draw_number"] == draw_number:
-            target = DrawRecord(**r)
-        else:
-            # 也存下其他记录
-            exist = db.query(DrawRecord).filter_by(lottery_code=lottery,
-                                                    draw_number=r["draw_number"]).first()
-            if not exist:
-                db.add(DrawRecord(**r))
-    db.commit()
-    if target:
-        db.add(target)
-        db.commit()
-        db.refresh(target)
-    return target
+    # 本地未命中：从 GitHub 中转同步后再查（免费 PythonAnywhere 爬虫被白名单 403）
+    ensure_synced()
+    rec = db.query(DrawRecord).filter_by(lottery_code=lottery, draw_number=draw_number).first()
+    return rec
 
 
 # ========== 彩种 API ==========
@@ -313,25 +306,11 @@ def latest_draws(lottery: str, count: int = Query(20, ge=1, le=200),
     recs = db.query(DrawRecord).filter_by(lottery_code=lottery) \
         .order_by(desc(DrawRecord.draw_number)).offset(offset).limit(count).all()
     if not recs:
-        # 自动抓取
-        fetcher = (
-                        crawler.fetch_all_ssq if lottery == "ssq" else
-                        crawler.fetch_all_dlt if lottery == "dlt" else
-                        crawler.fetch_all_hk6
-                    )
-        records = fetcher(max_pages=2)
-        saved = []
-        for r in records:
-            exist = db.query(DrawRecord).filter_by(lottery_code=lottery,
-                                                    draw_number=r["draw_number"]).first()
-            if not exist:
-                db.add(DrawRecord(**r))
-                saved.append(r)
-        if saved:
-            db.commit()
-            recs = db.query(DrawRecord).filter_by(lottery_code=lottery) \
-                .order_by(desc(DrawRecord.draw_number)).offset(offset).limit(count).all()
-            total = len(recs)
+        # 从 GitHub 中转同步最新数据（免费 PythonAnywhere 走白名单，本地爬虫会被 403）
+        ensure_synced()
+        recs = db.query(DrawRecord).filter_by(lottery_code=lottery) \
+            .order_by(desc(DrawRecord.draw_number)).offset(offset).limit(count).all()
+        total = db.query(DrawRecord).filter_by(lottery_code=lottery).count()
     return {"total": total, "draws": [_format_draw(r) for r in recs]}
 
 
