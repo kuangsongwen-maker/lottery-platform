@@ -302,15 +302,11 @@ def latest_draws(lottery: str, count: int = Query(20, ge=1, le=200),
     if lottery not in LOTTERY_CONFIG:
         raise HTTPException(404, "彩种不存在")
 
+    # 每次访问都确保从 GitHub 中转同步一次（6 小时缓存控频；免费账户走白名单绕过 403）
+    ensure_synced()
     total = db.query(DrawRecord).filter_by(lottery_code=lottery).count()
     recs = db.query(DrawRecord).filter_by(lottery_code=lottery) \
         .order_by(desc(DrawRecord.draw_number)).offset(offset).limit(count).all()
-    if not recs:
-        # 从 GitHub 中转同步最新数据（免费 PythonAnywhere 走白名单，本地爬虫会被 403）
-        ensure_synced()
-        recs = db.query(DrawRecord).filter_by(lottery_code=lottery) \
-            .order_by(desc(DrawRecord.draw_number)).offset(offset).limit(count).all()
-        total = db.query(DrawRecord).filter_by(lottery_code=lottery).count()
     return {"total": total, "draws": [_format_draw(r) for r in recs]}
 
 
