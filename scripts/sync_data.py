@@ -30,6 +30,33 @@ def _clean(r: dict) -> dict:
     }
 
 
+NEW_FC = ["kl8", "3d", "qlc"]      # 福彩：官网全历史
+NEW_SP = ["pls", "plw", "qxc"]     # 体彩：官网仅最新一期，增量合并累积
+
+
+def _load_previous() -> dict:
+    """读取上一次生成的 latest.json，用于体彩历史增量合并。"""
+    if os.path.exists(OUT_FILE):
+        try:
+            with open(OUT_FILE, encoding="utf-8") as f:
+                return json.load(f).get("draws", {})
+        except Exception:
+            return {}
+    return {}
+
+
+def _merge_by_key(prev_list, new_list):
+    """按 (draw_number 或 draw_date) 去重合并，新数据覆盖旧数据。"""
+    seen = {}
+    for r in (prev_list or []):
+        key = r.get("draw_number") or r.get("draw_date")
+        seen[key] = r
+    for r in (new_list or []):
+        key = r.get("draw_number") or r.get("draw_date")
+        seen[key] = r
+    return list(seen.values())
+
+
 def build_payload() -> dict:
     c = LotteryCrawler()
     draws = {}
@@ -52,6 +79,20 @@ def build_payload() -> dict:
         }
         for r in hk
     ]
+
+    # 福彩3个：官网全历史
+    prev = _load_previous()
+    for code in NEW_FC:
+        raw = c.fetch_fc_all(code)
+        draws[code] = [_clean(r) for r in raw]
+
+    # 体彩3个：官网仅最新一期，与旧数据合并以累积历史
+    for code in NEW_SP:
+        raw = c.fetch_sporttery_latest(code)
+        merged = _merge_by_key(prev.get(code, []), [_clean(r) for r in raw])
+        merged.sort(key=lambda r: (r.get("draw_number") or r.get("draw_date") or ""))
+        draws[code] = merged
+
     return draws
 
 
@@ -65,8 +106,8 @@ def main():
     with open(OUT_FILE, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
     total = sum(len(v) for v in draws.values())
-    print(f"[sync] 已生成 {OUT_FILE}：共 {total} 条 "
-          f"(ssq={len(draws['ssq'])} dlt={len(draws['dlt'])} hk6={len(draws['hk6'])})")
+    codes = " ".join(f"{c}={len(draws[c])}" for c in sorted(draws))
+    print(f"[sync] 已生成 {OUT_FILE}：共 {total} 条 ({codes})")
 
 
 if __name__ == "__main__":

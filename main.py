@@ -988,7 +988,7 @@ def refresh_data(db: Session = Depends(get_db)):
     def job():
         db2 = SessionLocal()
         try:
-            for code in ("ssq", "dlt", "hk6"):
+            for code in LOTTERY_CONFIG:
                 existing = {r.draw_number for r in
                             db2.query(DrawRecord.draw_number)
                             .filter(DrawRecord.lottery_code == code).all()}

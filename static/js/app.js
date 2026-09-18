@@ -55,29 +55,34 @@ const LOTTERY_LABELS = {
   ssq: { main: "红球", extra: "蓝球", mainCount: 6, extraCount: 1 },
   dlt: { main: "前区", extra: "后区", mainCount: 5, extraCount: 2 },
   hk6: { main: "搅珠", extra: "特别", mainCount: 6, extraCount: 1 },
+  kl8: { main: "选号", extra: "特别", mainCount: 20, extraCount: 0 },
+  "3d": { main: "开奖号", extra: "特别", mainCount: 3, extraCount: 0 },
+  qlc: { main: "基本号", extra: "特别", mainCount: 7, extraCount: 1 },
+  pls: { main: "开奖号", extra: "特别", mainCount: 3, extraCount: 0 },
+  plw: { main: "开奖号", extra: "特别", mainCount: 5, extraCount: 0 },
+  qxc: { main: "开奖号", extra: "特别", mainCount: 7, extraCount: 0 },
 };
 
 /* ====== 页面导航 ====== */
 function showPage(page) {
   qsa(".page").forEach(p => p.classList.remove("active"));
-  // 彩种页面共用 id="page-lottery"，其他页面 id="page-{name}"
   const mapping = {
-    "lottery-ssq": "page-lottery",
-    "lottery-dlt": "page-lottery",
-    "lottery-hk6": "page-lottery",
     "calculator": "page-calculator",
     "compare": "page-compare",
     "favorites": "page-favorites",
     "home": "page-home",
   };
-  const target = $(mapping[page] || "page-" + page);
+  let target;
+  if (page.startsWith("lottery-")) {
+    target = $("page-lottery");
+  } else {
+    target = $(mapping[page] || "page-" + page);
+  }
   if (!target) return;
   target.classList.add("active");
 
   if (page === "home") loadHome();
-  else if (page === "lottery-ssq") loadLottery("ssq");
-  else if (page === "lottery-dlt") loadLottery("dlt");
-  else if (page === "lottery-hk6") loadLottery("hk6");
+  else if (page.startsWith("lottery-")) loadLottery(page.slice("lottery-".length));
   else if (page === "favorites") loadFavorites();
   else if (page === "calculator") {
     document.title = "奖金计算器 - 彩票数据平台";

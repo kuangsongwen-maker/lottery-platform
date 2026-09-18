@@ -47,7 +47,55 @@ LOTTERY_CONFIG = {
         "main_count": 6, "main_min": 1, "main_max": 49,
         "extra_label": "特别号码",
         "extra_count": 1, "extra_min": 1, "extra_max": 49,
-    }
+    },
+    "kl8": {
+        "name": "快乐8",
+        "draw_days": "1,2,3,4,5,6,7",
+        "main_label": "选号",
+        "main_count": 20, "main_min": 1, "main_max": 80,
+        "extra_label": "特别号",
+        "extra_count": 0, "extra_min": 1, "extra_max": 80,
+    },
+    "3d": {
+        "name": "福彩3D",
+        "draw_days": "1,2,3,4,5,6,7",
+        "main_label": "开奖号",
+        "main_count": 3, "main_min": 0, "main_max": 9,
+        "extra_label": "特别号",
+        "extra_count": 0, "extra_min": 0, "extra_max": 9,
+    },
+    "qlc": {
+        "name": "七乐彩",
+        "draw_days": "1,3,5",
+        "main_label": "基本号",
+        "main_count": 7, "main_min": 1, "main_max": 30,
+        "extra_label": "特别号",
+        "extra_count": 1, "extra_min": 1, "extra_max": 30,
+    },
+    "pls": {
+        "name": "排列3",
+        "draw_days": "1,2,3,4,5,6,7",
+        "main_label": "开奖号",
+        "main_count": 3, "main_min": 0, "main_max": 9,
+        "extra_label": "特别号",
+        "extra_count": 0, "extra_min": 0, "extra_max": 9,
+    },
+    "plw": {
+        "name": "排列5",
+        "draw_days": "1,2,3,4,5,6,7",
+        "main_label": "开奖号",
+        "main_count": 5, "main_min": 0, "main_max": 9,
+        "extra_label": "特别号",
+        "extra_count": 0, "extra_min": 0, "extra_max": 9,
+    },
+    "qxc": {
+        "name": "七星彩",
+        "draw_days": "2,5",
+        "main_label": "开奖号",
+        "main_count": 7, "main_min": 0, "main_max": 14,
+        "extra_label": "特别号",
+        "extra_count": 0, "extra_min": 0, "extra_max": 14,
+    },
 }
 
 # ========== ORM 模型 ==========

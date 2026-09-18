@@ -159,6 +159,148 @@ class LotteryCrawler:
         records.reverse()
         return records
 
+    # ---------- 福彩（官网 cwl.gov.cn）----------
+    _FC_API = "https://www.cwl.gov.cn/cwl_admin/front/cwlkj/search/kjxx/findDrawNotice"
+    _FC_NAME = {"kl8": "kl8", "3d": "3d", "qlc": "qlc"}
+
+    def fetch_fc_all(self, code: str, page_size: int = 200) -> list[dict]:
+        """从福彩官网拉取全部历史（分页）。code in kl8/3d/qlc"""
+        name = self._FC_NAME[code]
+        results = []
+        page_no = 1
+        while True:
+            params = {"name": name, "systemType": "PC",
+                      "pageSize": page_size, "pageNo": page_no}
+            data = None
+            for attempt in range(2):
+                try:
+                    resp = self.sess.get(self._FC_API, params=params,
+                                         headers={**self.HEADERS,
+                                                  "Referer": "https://www.cwl.gov.cn/"},
+                                         timeout=20)
+                    data = resp.json()
+                    break
+                except Exception as e:
+                    print(f"[爬虫] 福彩 {code} 第{page_no}页第{attempt+1}次失败: {e}")
+                    import time
+                    time.sleep(1)
+            if data is None:
+                break
+            if data.get("state") != 0:
+                print(f"[爬虫] 福彩 {code} 接口异常: {data.get('message')}")
+                break
+            items = data.get("result") or []
+            if not items:
+                break
+            for it in items:
+                rec = self._parse_fc_item(code, it)
+                if rec:
+                    results.append(rec)
+            total = data.get("total", 0)
+            if page_no * page_size >= total:
+                break
+            page_no += 1
+            import time
+            time.sleep(0.15)
+        results.sort(key=lambda r: r["draw_date"])
+        return results
+
+    @staticmethod
+    def _parse_fc_item(code: str, it: dict) -> dict | None:
+        import re
+        draw_number = str(it.get("code", "")).strip()
+        date_raw = it.get("date", "") or ""
+        m = re.match(r"(\d{4}-\d{2}-\d{2})", date_raw)
+        draw_date = m.group(1) if m else ""
+        red = (it.get("red") or "").strip()
+        blue = (it.get("blue") or "").strip()
+        if not draw_date or not red:
+            return None
+        try:
+            numbers = [int(x) for x in red.split(",") if x.strip()]
+        except ValueError:
+            return None
+        extra = []
+        if blue:
+            try:
+                extra = [int(x) for x in blue.split(",") if x.strip()]
+            except ValueError:
+                extra = []
+        return {
+            "lottery_code": code,
+            "draw_number": draw_number,
+            "draw_date": draw_date,
+            "numbers": json.dumps(numbers),
+            "extra_numbers": json.dumps(extra),
+            "prize_pool": str(it.get("poolmoney") or "0").replace(",", ""),
+            "sales": str(it.get("sales") or "0").replace(",", ""),
+        }
+
+    # ---------- 体彩（官网 sporttery.cn）----------
+    _SP_API = "https://webapi.sporttery.cn/gateway/lottery/getDigitalDrawInfoV1.qry"
+    _SP_PARAM = {"pls": "35,0", "plw": "350133,0", "qxc": "04,0"}
+    _SP_KEY = {"pls": "pls", "plw": "plw", "qxc": "qxc"}
+
+    def fetch_sporttery_latest(self, code: str) -> list[dict]:
+        """从体彩官网拉取最新一期。code in pls/plw/qxc。
+
+        体彩官方接口仅返回最新一期，历史数据需由 sync_data 增量合并累积。
+        """
+        param = self._SP_PARAM[code]
+        try:
+            resp = self.sess.get(self._SP_API, params={"param": param, "isVerify": 1},
+                                 headers={**self.HEADERS,
+                                          "Referer": "https://www.sporttery.cn/"},
+                                 timeout=20)
+            data = resp.json()
+        except Exception as e:
+            print(f"[爬虫] 体彩 {code} 请求失败: {e}")
+            return []
+        v = (data.get("value") or {}).get(self._SP_KEY[code], {})
+        lp = v.get("lastPoolFund") or v.get("lastPoolDraw") or {}
+        if not lp:
+            # 兼容字段名：部分版本为 lastPoolDraw
+            lp = v.get("lastPoolDraw") or {}
+        if not lp:
+            print(f"[爬虫] 体彩 {code} 暂无最新开奖")
+            return []
+        draw_number = str(lp.get("lotteryDrawNum", "")).strip()
+        result = (lp.get("lotteryDrawResult") or lp.get("lotteryUnsortDrawresult") or "").strip()
+        draw_time = lp.get("lotteryDrawTime") or ""
+        draw_date = draw_time[:10] if draw_time else ""
+        if not draw_date or not result:
+            return []
+        try:
+            numbers = [int(x) for x in result.split() if x.strip()]
+        except ValueError:
+            return []
+        pool = str(lp.get("poolBalanceAfterdraw") or "0").replace(",", "")
+        return [{
+            "lottery_code": code,
+            "draw_number": draw_number,
+            "draw_date": draw_date,
+            "numbers": json.dumps(numbers),
+            "extra_numbers": json.dumps([]),
+            "prize_pool": pool,
+            "sales": "0",
+        }]
+
+    # ---------- 统一分发 ----------
+    def fetch_all(self, code: str, max_pages: int = 4) -> list[dict]:
+        """按彩种代码统一抓取：ssq/dlt/hk6 走原逻辑，福彩/体彩走新接口。"""
+        if code == "ssq":
+            return self.fetch_all_ssq(max_pages=max_pages)
+        if code == "dlt":
+            return self.fetch_all_dlt(max_pages=max_pages)
+        if code == "hk6":
+            return self.fetch_all_hk6(max_pages=max_pages)
+        if code in ("kl8", "3d", "qlc"):
+            return self.fetch_fc_all(code)
+        if code in ("pls", "plw", "qxc"):
+            return self.fetch_sporttery_latest(code)
+        print(f"[爬虫] 未知彩种: {code}")
+        return []
+
     # ---------- 香港六合彩：新数据源（pil.io，无需代理）----------
 
     def fetch_hk6_pilio(self, pages: int = 5) -> list[dict]:
