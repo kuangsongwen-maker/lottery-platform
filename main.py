@@ -337,12 +337,7 @@ def search_numbers(lottery: str,
     # 第一次搜索如果没有本地数据则自动抓取
     count = db.query(DrawRecord).filter_by(lottery_code=lottery).count()
     if count == 0:
-        fetcher = (
-                        crawler.fetch_all_ssq if lottery == "ssq" else
-                        crawler.fetch_all_dlt if lottery == "dlt" else
-                        crawler.fetch_all_hk6
-                    )
-        records = fetcher(max_pages=4)
+        records = crawler.fetch_all(lottery, max_pages=4)
         for r in records:
             if not db.query(DrawRecord).filter_by(lottery_code=lottery,
                                                    draw_number=r["draw_number"]).first():
@@ -404,12 +399,7 @@ def hot_cold(lottery: str, range_periods: int = Query(50, alias="range", ge=10, 
 
     # 确保有数据
     if db.query(DrawRecord).filter_by(lottery_code=lottery).count() == 0:
-        fetcher = (
-                        crawler.fetch_all_ssq if lottery == "ssq" else
-                        crawler.fetch_all_dlt if lottery == "dlt" else
-                        crawler.fetch_all_hk6
-                    )
-        records = fetcher(max_pages=4)
+        records = crawler.fetch_all(lottery, max_pages=4)
         for r in records:
             if not db.query(DrawRecord).filter_by(lottery_code=lottery,
                                                    draw_number=r["draw_number"]).first():
@@ -567,12 +557,7 @@ def predict_numbers(
         tuo_nums = tuo_nums[:cfg["main_count"] - len(dan_nums)]
 
     if db.query(DrawRecord).filter_by(lottery_code=lottery).count() == 0:
-        fetcher = (
-                        crawler.fetch_all_ssq if lottery == "ssq" else
-                        crawler.fetch_all_dlt if lottery == "dlt" else
-                        crawler.fetch_all_hk6
-                    )
-        records = fetcher(max_pages=4)
+        records = crawler.fetch_all(lottery, max_pages=4)
         for r in records:
             if not db.query(DrawRecord).filter_by(lottery_code=lottery,
                                                    draw_number=r["draw_number"]).first():
@@ -992,12 +977,7 @@ def refresh_data(db: Session = Depends(get_db)):
                 existing = {r.draw_number for r in
                             db2.query(DrawRecord.draw_number)
                             .filter(DrawRecord.lottery_code == code).all()}
-                fetcher = (
-                    crawler.fetch_all_ssq if code == "ssq" else
-                    crawler.fetch_all_dlt if code == "dlt" else
-                    crawler.fetch_all_hk6
-                )
-                records = fetcher(max_pages=4)
+                records = crawler.fetch_all(code, max_pages=4)
                 for r in records:
                     if r["draw_number"] not in existing:
                         db2.add(DrawRecord(**r))
