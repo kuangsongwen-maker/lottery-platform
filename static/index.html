@@ -126,15 +126,44 @@
             <label style="font-weight:400;width:auto"><input type="checkbox" id="meth-smart" value="smart" checked> 智能综合法</label>
           </div>
         </div>
-        <div class="form-row">
-          <label>胆码（推荐号）</label>
-          <input type="text" id="predict-dan" placeholder="逗号分隔，如 05,12,23" style="flex:1">
-          <span style="font-size:12px;color:#888;display:block;width:100%;margin-top:2px">胆码是你认为可能性较高的号码，预测时会优先考虑但不保证一定出现</span>
+        <!-- 乐透型 / 快乐8：胆拖·复式数量 -->
+        <div class="form-row" id="row-dantuo-count" style="display:none">
+          <label>胆码数量</label>
+          <input type="number" id="predict-dan-count" value="0" min="0" max="30" style="width:80px">
+          <span style="margin-left:12px">拖码数量</span>
+          <input type="number" id="predict-tuo-count" value="0" min="0" max="80" style="width:80px">
+          <span style="font-size:12px;color:#888;display:block;width:100%;margin-top:4px">
+            <strong>0胆0拖</strong>＝普通单式预测；<strong>胆码0＋拖码N</strong>＝复式投注（拆 C(N,单式个数) 注）；
+            <strong>胆码&gt;0</strong>＝胆拖投注（胆码每注必出，拆 C(拖码数, 单式个数−胆码数) 注）。
+          </span>
         </div>
-        <div class="form-row">
-          <label>拖码（备选号）</label>
-          <input type="text" id="predict-tuo" placeholder="逗号分隔，如 28,30,33" style="flex:1">
-          <span style="font-size:12px;color:#888;display:block;width:100%;margin-top:2px">拖码是备选号码，预测时也会给予一定优先级</span>
+        <div class="form-row" id="row-dantuo-nums" style="display:none">
+          <label>心水胆码</label>
+          <input type="text" id="predict-dan" placeholder="逗号分隔，如 05,12（可留空）" style="flex:1">
+          <span style="margin-left:8px">心水拖码</span>
+          <input type="text" id="predict-tuo" placeholder="逗号分隔，如 28,30（可留空）" style="flex:1">
+          <span style="font-size:12px;color:#888;display:block;width:100%;margin-top:4px">
+            填写后优先采用你指定的号码；没填满的数量由电脑按所选预测方法自动补足。
+          </span>
+        </div>
+        <!-- 快乐8：先选「选几」玩法 -->
+        <div class="form-row" id="row-play" style="display:none">
+          <label>快乐8玩法</label>
+          <select id="predict-play" style="width:120px"></select>
+          <span style="font-size:12px;color:#888">快乐8 须先选「选几」（选一至选十），胆拖/复式按该玩法的号码个数计算</span>
+        </div>
+        <!-- 数字型：按位选号（官方位选复式 / 机选） -->
+        <div class="form-row" id="row-pos" style="display:none">
+          <label>按位选号</label>
+          <div id="pos-inputs" style="display:flex;flex-wrap:wrap;gap:6px;flex:1"></div>
+          <span style="font-size:12px;color:#888;display:block;width:100%;margin-top:4px">
+            每位填候选数字（逗号分隔），留空＝该位全包。指定后按官方<strong>位选复式</strong>展开（注数＝各位候选数之积）；全部留空即为投注站式<strong>机选</strong>。
+          </span>
+        </div>
+        <div class="form-row" id="row-nodantuo" style="display:none">
+          <span style="font-size:12px;color:#a00">
+            该彩种为数字型定位玩法（号码按位、可重复），官方无传统胆拖/复式；此处按官方规则提供<b>按位选号（位选复式）</b>与<b>机选</b>。
+          </span>
         </div>
         <div class="form-row">
           <label>生成注数</label>

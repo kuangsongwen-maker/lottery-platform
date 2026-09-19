@@ -31,6 +31,7 @@ LOTTERY_CONFIG = {
         "main_count": 6, "main_min": 1, "main_max": 33,
         "extra_label": "蓝球",
         "extra_count": 1, "extra_min": 1, "extra_max": 16,
+        "dantuo": True,   # 乐透型，官方支持胆拖/复式
     },
     "dlt": {
         "name": "大乐透",
@@ -39,6 +40,7 @@ LOTTERY_CONFIG = {
         "main_count": 5, "main_min": 1, "main_max": 35,
         "extra_label": "后区",
         "extra_count": 2, "extra_min": 1, "extra_max": 12,
+        "dantuo": True,   # 乐透型，官方支持胆拖/复式（前区胆1-4，胆+拖≥6）
     },
     "hk6": {
         "name": "香港六合彩",
@@ -47,6 +49,7 @@ LOTTERY_CONFIG = {
         "main_count": 6, "main_min": 1, "main_max": 49,
         "extra_label": "特别号码",
         "extra_count": 1, "extra_min": 1, "extra_max": 49,
+        "dantuo": True,   # 乐透型，复式/胆拖通行（非港府官方术语，但玩法通用）
     },
     "kl8": {
         "name": "快乐8",
@@ -55,6 +58,7 @@ LOTTERY_CONFIG = {
         "main_count": 20, "main_min": 1, "main_max": 80,
         "extra_label": "特别号",
         "extra_count": 0, "extra_min": 1, "extra_max": 80,
+        "dantuo": False,  # 官方胆拖须先选「选几」玩法，与本模型（生成20个开奖号）不匹配
     },
     "3d": {
         "name": "福彩3D",
@@ -63,6 +67,7 @@ LOTTERY_CONFIG = {
         "main_count": 3, "main_min": 0, "main_max": 9,
         "extra_label": "特别号",
         "extra_count": 0, "extra_min": 0, "extra_max": 9,
+        "dantuo": False,  # 数字型定位玩法（单选/组选3/组选6），官方无胆拖/复式
     },
     "qlc": {
         "name": "七乐彩",
@@ -71,6 +76,7 @@ LOTTERY_CONFIG = {
         "main_count": 7, "main_min": 1, "main_max": 30,
         "extra_label": "特别号",
         "extra_count": 1, "extra_min": 1, "extra_max": 30,
+        "dantuo": True,   # 乐透型，官方支持胆拖（胆1-6）/复式（8-16个号）
     },
     "pls": {
         "name": "排列3",
@@ -79,6 +85,7 @@ LOTTERY_CONFIG = {
         "main_count": 3, "main_min": 0, "main_max": 9,
         "extra_label": "特别号",
         "extra_count": 0, "extra_min": 0, "extra_max": 9,
+        "dantuo": False,  # 数字型：用「位选复式/按位定胆」代替（官方另有直选组合胆拖、组选胆拖）
     },
     "plw": {
         "name": "排列5",
@@ -87,6 +94,7 @@ LOTTERY_CONFIG = {
         "main_count": 5, "main_min": 0, "main_max": 9,
         "extra_label": "特别号",
         "extra_count": 0, "extra_min": 0, "extra_max": 9,
+        "dantuo": False,  # 数字型：用「位选复式/按位定胆」代替（排列5官方仅直选，无胆拖）
     },
     "qxc": {
         "name": "七星彩",
@@ -95,7 +103,38 @@ LOTTERY_CONFIG = {
         "main_count": 7, "main_min": 0, "main_max": 14,
         "extra_label": "特别号",
         "extra_count": 0, "extra_min": 0, "extra_max": 14,
+        "dantuo": False,  # 数字型：官方无传统胆拖，用「位选复式/按位定胆」代替
     },
+}
+
+
+# ========== 各彩种官方投注结构（机选/复式/胆拖按此生成）==========
+# kind:
+#   lotto   乐透型 —— 主号码取 count 个互不相同的号( min~max )，另取 extra_count 个特别号
+#   digital 数字型 —— 按位选号，每位可取多个数字且允许重复（直选/位选复式）
+#   keno    快乐8  —— 须先选「选几」玩法( play 个号 )，再做复式/胆拖
+BET_RULES = {
+    "ssq": {"kind": "lotto", "max_dan": 5, "min_total": 7,
+            "plays": None},
+    "dlt": {"kind": "lotto", "max_dan": 4, "min_total": 6,
+            "plays": None},
+    "qlc": {"kind": "lotto", "max_dan": 6, "min_total": 8,
+            "plays": None},
+    "hk6": {"kind": "lotto", "max_dan": 5, "min_total": 7,
+            "plays": None},
+    "kl8": {"kind": "keno", "max_dan": 9, "min_total": 2,
+            "plays": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]},
+    "3d":  {"kind": "digital", "plays": None,
+            "positions": [("百位", 0, 9), ("十位", 0, 9), ("个位", 0, 9)]},
+    "pls": {"kind": "digital", "plays": None,
+            "positions": [("百位", 0, 9), ("十位", 0, 9), ("个位", 0, 9)]},
+    "plw": {"kind": "digital", "plays": None,
+            "positions": [("万位", 0, 9), ("千位", 0, 9), ("百位", 0, 9),
+                          ("十位", 0, 9), ("个位", 0, 9)]},
+    "qxc": {"kind": "digital", "plays": None,
+            "positions": [("第1位", 0, 9), ("第2位", 0, 9), ("第3位", 0, 9),
+                          ("第4位", 0, 9), ("第5位", 0, 9), ("第6位", 0, 9),
+                          ("第7位", 0, 14)]},
 }
 
 # ========== ORM 模型 ==========

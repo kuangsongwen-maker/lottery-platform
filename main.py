@@ -1,5 +1,6 @@
 """彩票数据平台 - 后端入口 (FastAPI + SQLite)"""
-import json, threading, os, random, time
+import json, threading, os, random, time, itertools
+from math import comb
 from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
 
@@ -15,9 +16,14 @@ from passlib.context import CryptContext
 from database import (
     init_db, get_db, SessionLocal,
     DrawRecord, User, Favorite, SearchHistory,
-    LOTTERY_CONFIG,
+    LOTTERY_CONFIG, BET_RULES,
 )
 from crawler import LotteryCrawler
+
+# 每注金额（全国电脑型彩票统一 2 元/注）
+BET_UNIT_PRICE = 2
+# 胆拖/复式最多展开展示的注数（避免超大组合撑爆页面）
+MAX_EXPAND_SHOW = 200
 
 # ========== 配置 ==========
 # 生产环境务必通过环境变量 JWT_SECRET 注入（PythonAnywhere Web 后台 → Environment variables）。
@@ -258,6 +264,8 @@ def list_lotteries(db: Session = Depends(get_db)):
     for code, cfg in LOTTERY_CONFIG.items():
         latest = db.query(DrawRecord).filter_by(lottery_code=code) \
             .order_by(desc(DrawRecord.draw_number)).first()
+        rule = BET_RULES.get(code, {})
+        kind = rule.get("kind", "lotto")
         result.append({
             "code": code,
             "name": cfg["name"],
@@ -268,6 +276,14 @@ def list_lotteries(db: Session = Depends(get_db)):
             "main_min": cfg["main_min"], "main_max": cfg["main_max"],
             "extra_count": cfg["extra_count"],
             "extra_min": cfg["extra_min"], "extra_max": cfg["extra_max"],
+            # 投注结构信息：前端据此决定显示胆拖/复式、按位选号还是快乐8玩法
+            "bet_kind": kind,
+            "dantuo": bool(cfg.get("dantuo")),
+            "max_dan": rule.get("max_dan"),
+            "min_total": rule.get("min_total"),
+            "plays": rule.get("plays"),
+            "positions": [{"name": p[0], "min": p[1], "max": p[2]}
+                          for p in (rule.get("positions") or [])],
             "latest": {
                 "draw_number": latest.draw_number,
                 "draw_date": latest.draw_date,
@@ -528,6 +544,169 @@ def compare_bets(body: dict, db: Session = Depends(get_db)):
     return {"draw_number": draw_number, "results": results}
 
 
+# 数字型彩种（3D/排列3/排列5/七星彩）可选方法
+_DIGITAL_METHODS = {
+    "random": ("机选法",     "完全随机，等同投注站机选"),
+    "hot":    ("热号法",     "各位取历史上出现最多的数字"),
+    "cold":   ("冷号法",     "各位取历史上遗漏最久的数字"),
+    "whot":   ("加权热号法", "近期数字权重更高，偏重最新走势"),
+    "mix":    ("综合法",     "热号为主，兼顾冷号"),
+    "smart":  ("智能综合法", "综合近期走势加权"),
+    "markov": ("马尔可夫链", "按近期走势加权推导"),
+}
+
+
+def _predict_digital(lottery, cfg, rule, range_periods, methods, count,
+                     pos_dan, sum_min, sum_max, db):
+    """数字型彩种预测与机选（按位选号，允许重复）。
+
+    官方规则：每位独立选号（3D/排列3为百十个位，排列5为万千百十个位，
+    七星彩前6位 0-9、第7位 0-14），数字可重复。
+      - 不指定任何位     → 机选，生成 count 注单式号码
+      - 指定某些位的数字 → 位选复式（官方直选复式），注数 = 各位候选数之积
+    """
+    positions = rule["positions"]
+    npos = len(positions)
+
+    if db.query(DrawRecord).filter_by(lottery_code=lottery).count() == 0:
+        records = crawler.fetch_all(lottery, max_pages=4)
+        for r in records:
+            if not db.query(DrawRecord).filter_by(lottery_code=lottery,
+                                                  draw_number=r["draw_number"]).first():
+                db.add(DrawRecord(**r))
+        db.commit()
+
+    recs = db.query(DrawRecord).filter_by(lottery_code=lottery) \
+        .order_by(desc(DrawRecord.draw_number)).limit(range_periods).all()
+    if not recs:
+        raise HTTPException(404, "暂无数据")
+
+    # 解析各位候选数字："|" 分位，"," 分数字，留空 = 该位全包
+    parts = (pos_dan or "").split("|")
+    cand, constrained = [], False
+    for i, (_pname, pmin, pmax) in enumerate(positions):
+        txt = parts[i].strip() if i < len(parts) else ""
+        nums = []
+        if txt:
+            for x in txt.split(","):
+                x = x.strip()
+                if x.isdigit():
+                    v = int(x)
+                    if pmin <= v <= pmax and v not in nums:
+                        nums.append(v)
+            if nums:
+                constrained = True
+                nums.sort()
+        if not nums:
+            nums = list(range(pmin, pmax + 1))
+        cand.append(nums)
+
+    # 各位历史频次（越近期权重越高）
+    pos_freq = [{d: 0 for d in range(pmin, pmax + 1)} for (_n, pmin, pmax) in positions]
+    for idx, rec in enumerate(recs):
+        try:
+            nums = json.loads(rec.numbers)
+        except Exception:
+            continue
+        w = len(recs) - idx
+        for i, n in enumerate(nums[:npos]):
+            if i < npos and n in pos_freq[i]:
+                pos_freq[i][n] += w
+
+    def _in_sum(arr):
+        """和值约束校验（对应官方"包点"思路的区间筛选）"""
+        if sum_min is None and sum_max is None:
+            return True
+        s = sum(arr)
+        if sum_min is not None and s < sum_min:
+            return False
+        if sum_max is not None and s > sum_max:
+            return False
+        return True
+
+    def _weights(m):
+        out = []
+        for i, (_n, pmin, pmax) in enumerate(positions):
+            f = pos_freq[i]
+            mx = max(f.values()) if f else 1
+            w = {}
+            for d in range(pmin, pmax + 1):
+                base = f.get(d, 0)
+                if m in ("hot", "whot", "smart", "mix", "markov"):
+                    w[d] = base + 1
+                elif m == "cold":
+                    w[d] = mx - base + 1
+                else:
+                    w[d] = 1
+            out.append(w)
+        return out
+
+    def _gen_one(m):
+        ws = _weights(m)
+        arr = []
+        for _attempt in range(30):
+            arr = []
+            for i, (_n, pmin, pmax) in enumerate(positions):
+                ds = list(ws[i].keys())
+                arr.append(random.choices(ds, weights=[ws[i][d] for d in ds], k=1)[0])
+            if _in_sum(arr):
+                return arr
+        return arr
+
+    results = {}
+    if constrained:
+        # 位选复式（官方直选复式）：各位候选数之积 = 总注数
+        combos = list(itertools.product(*cand))
+        bet_count = len(combos)
+        shown = [list(c) for c in combos[:MAX_EXPAND_SHOW]]
+        results["fushi"] = {
+            "name": "位选复式（直选复式）",
+            "description": "按你指定的各位候选数字全组合展开，属官方直选复式投注",
+            "position_names": [p[0] for p in positions],
+            "digits_candidates": cand,
+            "bet_count": bet_count,
+            "bet_amount": bet_count * BET_UNIT_PRICE,
+            "bets": [{"main_numbers": s, "extra_numbers": []} for s in shown],
+        }
+        methods_list = ["fushi"]
+    else:
+        methods_list = [m.strip() for m in methods.split(",")
+                        if m.strip() in _DIGITAL_METHODS] or ["random"]
+        for m in methods_list:
+            mname, mdesc = _DIGITAL_METHODS[m]
+            bets, seen = [], set()
+            for _ in range(count):
+                for _attempt in range(20):
+                    arr = _gen_one(m)
+                    key = ",".join(map(str, arr))
+                    if key not in seen:
+                        seen.add(key)
+                        bets.append({"main_numbers": arr, "extra_numbers": []})
+                        break
+            results[m] = {
+                "name": mname, "description": mdesc,
+                "bet_count": len(bets),
+                "bet_amount": len(bets) * BET_UNIT_PRICE,
+                "bets": bets,
+            }
+
+    total_bets = sum(r["bet_count"] for r in results.values())
+    return {
+        "total_periods": len(recs),
+        "methods": methods_list,
+        "count": count,
+        "bet_kind": "digital",
+        "bet_mode": "位选复式" if constrained else "机选",
+        "position_names": [p[0] for p in positions],
+        "unit_price": BET_UNIT_PRICE,
+        "total_bet_count": total_bets,
+        "total_bet_amount": total_bets * BET_UNIT_PRICE,
+        "results": results,
+        "hot_main": [], "cold_main": [],
+        "disclaimer": "彩票有风险，购彩需谨慎。以上号码基于历史统计或随机生成，仅供参考，不构成任何购彩建议。",
+    }
+
+
 @app.get("/api/analysis/{lottery}/predict")
 def predict_numbers(
     lottery: str,
@@ -536,25 +715,69 @@ def predict_numbers(
     count: int = Query(1, ge=1, le=20),
     dan: str = Query("", alias="dan"),
     tuo: str = Query("", alias="tuo"),
+    dan_count: int = Query(0, alias="danCount", ge=0, le=30),
+    tuo_count: int = Query(0, alias="tuoCount", ge=0, le=80),
+    play: int = Query(0, alias="play", ge=0, le=10),
+    pos_dan: str = Query("", alias="posDan"),
+    sum_min: int = Query(None, alias="sumMin"),
+    sum_max: int = Query(None, alias="sumMax"),
     db: Session = Depends(get_db),
 ):
-    """号码预测：多方法可选，支持组合，支持多注"""
+    """号码预测：多方法可选；乐透型支持胆拖/复式，数字型支持按位选号/机选"""
     if lottery not in LOTTERY_CONFIG:
         raise HTTPException(404, "彩种不存在")
     cfg = LOTTERY_CONFIG[lottery]
+    rule = BET_RULES.get(lottery, {"kind": "lotto"})
+    kind = rule.get("kind", "lotto")
     is_hk6 = lottery == "hk6"
 
-    # 解析胆拖
+    # 数字型（福彩3D/排列3/排列5/七星彩）走按位选号分支
+    if kind == "digital":
+        return _predict_digital(lottery, cfg, rule, range_periods, methods, count,
+                                pos_dan, sum_min, sum_max, db)
+
+    # 单式号码个数：乐透型取主号码数；快乐8 取「选几」玩法
+    bet_mc = cfg["main_count"]
+    if kind == "keno":
+        if play <= 0:
+            play = 10
+        if play not in (rule.get("plays") or []):
+            raise HTTPException(400, "快乐8 玩法须为选一至选十（1-10）")
+        bet_mc = play
+
+    # 解析用户手工填写的心水号码
     dan_nums = [int(x.strip()) for x in dan.split(",") if x.strip().isdigit()]
     tuo_nums = [int(x.strip()) for x in tuo.split(",") if x.strip().isdigit()]
-    # 过滤胆拖号码在有效范围内
     dan_nums = [n for n in dan_nums if cfg["main_min"] <= n <= cfg["main_max"]]
     tuo_nums = [n for n in tuo_nums if cfg["main_min"] <= n <= cfg["main_max"]]
-    # 胆 + 拖 不能超过主号码数量
-    if len(dan_nums) > cfg["main_count"]:
-        raise HTTPException(400, f"胆码数量不能超过 {cfg['main_count']}")
-    if len(dan_nums) + len(tuo_nums) > cfg["main_count"]:
-        tuo_nums = tuo_nums[:cfg["main_count"] - len(dan_nums)]
+    dan_nums = list(dict.fromkeys(dan_nums))
+    tuo_nums = [n for n in dict.fromkeys(tuo_nums) if n not in dan_nums]
+
+    # 是否启用胆拖/复式：以「数量」为准（0胆0拖 = 原默认预测约束）
+    dantuo_mode = (dan_count > 0 or tuo_count > 0)
+    if dantuo_mode:
+        max_dan = rule.get("max_dan", bet_mc - 1)
+        min_total = rule.get("min_total", bet_mc + 1)
+        pool_size = cfg["main_max"] - cfg["main_min"] + 1
+        if dan_count >= bet_mc:
+            raise HTTPException(400, f"胆码数量必须少于单式号码个数 {bet_mc} 个")
+        if dan_count > max_dan:
+            raise HTTPException(400, f"该彩种胆码最多 {max_dan} 个")
+        if dan_count > 0 and tuo_count == 0:
+            raise HTTPException(400, "使用胆码时必须同时指定拖码数量")
+        if dan_count + tuo_count < min_total:
+            raise HTTPException(
+                400, f"胆码+拖码之和至少 {min_total} 个（须多于单式 {bet_mc} 个才构成胆拖/复式）")
+        if tuo_count < bet_mc - dan_count:
+            raise HTTPException(400, f"胆码 {dan_count} 个时，拖码至少需 {bet_mc - dan_count} 个")
+        if dan_count + tuo_count > pool_size:
+            raise HTTPException(400, f"胆码+拖码总数超出该彩种号码池（{pool_size} 个）")
+    else:
+        # 兼容旧行为：仅手工填号且未启用数量模式时，限制胆拖总数不超单式个数
+        if len(dan_nums) > bet_mc:
+            raise HTTPException(400, f"胆码数量不能超过 {bet_mc}")
+        if len(dan_nums) + len(tuo_nums) > bet_mc:
+            tuo_nums = tuo_nums[:bet_mc - len(dan_nums)]
 
     if db.query(DrawRecord).filter_by(lottery_code=lottery).count() == 0:
         records = crawler.fetch_all(lottery, max_pages=4)
@@ -610,6 +833,45 @@ def predict_numbers(
 
     def pick(pool, n):
         return sorted(random.sample(pool, min(n, len(pool))))
+
+    def _method_ranking(gen_fn, samples=30):
+        """用某个预测方法多次生成，统计号码被选中的频次，
+        返回该方法对全号码池的偏好排序（用于胆拖选号 / 快乐8 取前 play 个）。"""
+        freq = {n: 0 for n in mr}
+        for _ in range(samples):
+            try:
+                mn, _en = gen_fn()
+            except Exception:
+                continue
+            for n in mn:
+                if n in freq:
+                    freq[n] += 1
+        return sorted(freq.keys(), key=lambda n: (-freq[n], random.random()))
+
+    def _pick_extra(gen_fn):
+        """取该方法的特别号码（胆拖/复式票中特别号取一组固定值）"""
+        if ec <= 0 or is_hk6:
+            return []
+        try:
+            _mn, en = gen_fn()
+            return list(en)
+        except Exception:
+            return pick(list(er), ec)
+
+    def _pick_dan_tuo(ranked, dcount, tcount):
+        """胆拖选号：用户心水号码优先，不足的数量由该预测方法的偏好排序补足。"""
+        def _fill(target, users, exclude):
+            got = [n for n in users if n not in exclude][:target]
+            for n in ranked:
+                if len(got) >= target:
+                    break
+                if n in exclude or n in got:
+                    continue
+                got.append(n)
+            return got
+        dn = _fill(dcount, dan_nums, set())
+        tn = _fill(tcount, tuo_nums, set(dn))
+        return dn, tn
 
     def _apply_dan_tuo(main_list):
         """胆码和拖码作为参考建议，通过加权随机影响预测但不强制出现"""
@@ -843,24 +1105,69 @@ def predict_numbers(
     results = {}
     for m in methods_list:
         mname, mdesc, gen_fn = gen_map[m]
-        bets, seen = [], set()
-        for _ in range(count):
-            for attempt in range(10):
-                mn, en = gen_fn()
-                # 应用胆拖约束
-                mn = _apply_dan_tuo(mn)
-                # HK6 不用输出特别号码
-                if is_hk6:
-                    en = []
-                key = f"{mn}|{en}"
-                if key not in seen:
-                    seen.add(key)
+        ranked = _method_ranking(gen_fn)
+
+        if dantuo_mode:
+            # 胆拖 / 复式：单方案注数 = C(拖码个数, bet_mc - 胆码个数)
+            schemes = []
+            for si in range(count):
+                r2 = _method_ranking(gen_fn, samples=12) if si > 0 else ranked
+                dn, tn = _pick_dan_tuo(r2, dan_count, tuo_count)
+                need = bet_mc - len(dn)
+                n_combo = comb(len(tn), need) if need >= 0 else 0
+                schemes.append({
+                    "dan_nums": sorted(dn),
+                    "tuo_nums": sorted(tn),
+                    "bet_count": n_combo,
+                    "bet_amount": n_combo * BET_UNIT_PRICE,
+                })
+            bet_count_total = sum(s["bet_count"] for s in schemes)
+            # 展示第一个方案展开的注（限量，避免超大组合撑爆页面）
+            dn0 = schemes[0]["dan_nums"]
+            tn0 = schemes[0]["tuo_nums"]
+            need0 = bet_mc - len(dn0)
+            en0 = _pick_extra(gen_fn)
+            bets = []
+            for c in list(itertools.combinations(sorted(tn0), need0))[:MAX_EXPAND_SHOW]:
+                mn = sorted(list(dn0) + list(c))
+                bets.append({"main_numbers": mn} if is_hk6
+                            else {"main_numbers": mn, "extra_numbers": en0})
+            results[m] = {
+                "name": mname, "description": mdesc,
+                "dan_nums": dn0, "tuo_nums": tn0,
+                "schemes": schemes,
+                "bet_count": bet_count_total,
+                "bet_amount": bet_count_total * BET_UNIT_PRICE,
+                "bets": bets,
+            }
+        else:
+            bets, seen = [], set()
+            for _ in range(count):
+                for attempt in range(10):
+                    mn, en = gen_fn()
+                    if kind == "keno":
+                        # 快乐8：按「选几」玩法，从该方法偏好的头部区间取样
+                        top = ranked[:max(bet_mc * 3, bet_mc + 5)]
+                        mn = sorted(random.sample(top, min(bet_mc, len(top))))
+                    elif dan_nums or tuo_nums:
+                        # 兼容旧行为：心水号加权影响预测（不强制出现）
+                        mn = _apply_dan_tuo(mn)
                     if is_hk6:
-                        bets.append({"main_numbers": mn})
-                    else:
-                        bets.append({"main_numbers": mn, "extra_numbers": en})
-                    break
-        results[m] = {"name": mname, "description": mdesc, "bets": bets}
+                        en = []
+                    key = f"{mn}|{en}"
+                    if key not in seen:
+                        seen.add(key)
+                        if is_hk6:
+                            bets.append({"main_numbers": mn})
+                        else:
+                            bets.append({"main_numbers": mn, "extra_numbers": en})
+                        break
+            results[m] = {
+                "name": mname, "description": mdesc,
+                "bet_count": len(bets),
+                "bet_amount": len(bets) * BET_UNIT_PRICE,
+                "bets": bets,
+            }
 
     resp = {
         "total_periods": total,
@@ -877,6 +1184,18 @@ def predict_numbers(
     if dan_nums or tuo_nums:
         resp["dan_nums"] = dan_nums
         resp["tuo_nums"] = tuo_nums
+
+    # 投注汇总（每注 2 元）
+    resp["bet_kind"] = kind
+    resp["unit_price"] = BET_UNIT_PRICE
+    resp["dan_count"] = dan_count if dantuo_mode else 0
+    resp["tuo_count"] = tuo_count if dantuo_mode else 0
+    resp["bet_mode"] = ("胆拖投注" if (dantuo_mode and dan_count > 0)
+                        else "复式投注" if dantuo_mode else "单式/机选")
+    resp["play"] = play if kind == "keno" else None
+    resp["single_count"] = bet_mc
+    resp["total_bet_count"] = sum(r.get("bet_count", 0) for r in results.values())
+    resp["total_bet_amount"] = sum(r.get("bet_amount", 0) for r in results.values())
     return resp
 
 

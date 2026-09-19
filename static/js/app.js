@@ -51,16 +51,32 @@ function showMsg(id, text, isError = true) {
 }
 
 // 彩种切换时的标签文本
+// betKind: lotto=乐透型(支持胆拖/复式) / digital=数字型(按位选号) / keno=快乐8(先选玩法)
+// positions: 数字型各位名称与取值范围；plays: 快乐8「选几」玩法
 const LOTTERY_LABELS = {
-  ssq: { main: "红球", extra: "蓝球", mainCount: 6, extraCount: 1 },
-  dlt: { main: "前区", extra: "后区", mainCount: 5, extraCount: 2 },
-  hk6: { main: "搅珠", extra: "特别", mainCount: 6, extraCount: 1 },
-  kl8: { main: "选号", extra: "特别", mainCount: 20, extraCount: 0 },
-  "3d": { main: "开奖号", extra: "特别", mainCount: 3, extraCount: 0 },
-  qlc: { main: "基本号", extra: "特别", mainCount: 7, extraCount: 1 },
-  pls: { main: "开奖号", extra: "特别", mainCount: 3, extraCount: 0 },
-  plw: { main: "开奖号", extra: "特别", mainCount: 5, extraCount: 0 },
-  qxc: { main: "开奖号", extra: "特别", mainCount: 7, extraCount: 0 },
+  ssq: { main: "红球", extra: "蓝球", mainCount: 6, extraCount: 1,
+         betKind: "lotto", maxDan: 5, minTotal: 7 },
+  dlt: { main: "前区", extra: "后区", mainCount: 5, extraCount: 2,
+         betKind: "lotto", maxDan: 4, minTotal: 6 },
+  hk6: { main: "搅珠", extra: "特别", mainCount: 6, extraCount: 1,
+         betKind: "lotto", maxDan: 5, minTotal: 7 },
+  kl8: { main: "选号", extra: "特别", mainCount: 20, extraCount: 0,
+         betKind: "keno", plays: [1,2,3,4,5,6,7,8,9,10] },
+  "3d": { main: "开奖号", extra: "特别", mainCount: 3, extraCount: 0,
+          betKind: "digital",
+          positions: [["百位",0,9],["十位",0,9],["个位",0,9]] },
+  qlc: { main: "基本号", extra: "特别", mainCount: 7, extraCount: 1,
+         betKind: "lotto", maxDan: 6, minTotal: 8 },
+  pls: { main: "开奖号", extra: "特别", mainCount: 3, extraCount: 0,
+         betKind: "digital",
+         positions: [["百位",0,9],["十位",0,9],["个位",0,9]] },
+  plw: { main: "开奖号", extra: "特别", mainCount: 5, extraCount: 0,
+         betKind: "digital",
+         positions: [["万位",0,9],["千位",0,9],["百位",0,9],["十位",0,9],["个位",0,9]] },
+  qxc: { main: "开奖号", extra: "特别", mainCount: 7, extraCount: 0,
+         betKind: "digital",
+         positions: [["第1位",0,9],["第2位",0,9],["第3位",0,9],["第4位",0,9],
+                     ["第5位",0,9],["第6位",0,9],["第7位",0,14]] },
 };
 
 /* ====== 页面导航 ====== */
@@ -110,7 +126,7 @@ document.addEventListener("click", e => {
   if (content) content.style.display = "block";
 
   if (currentTab === "hotcold") doHotCold();
-  if (currentTab === "predict") doPredict();
+  if (currentTab === "predict") { updatePredictForm(); doPredict(); }
   if (currentTab === "search") { /* 等待用户输入 */ }
   if (currentTab === "manual" && !token) { showMsg("manual-msg", "请先登录后手动录入"); $("btn-show-login").click(); }
 });
@@ -160,6 +176,7 @@ async function loadLottery(lottery) {
   currentLottery = lottery;
   drawsPage = 1;
   searchPage = 1;
+  updatePredictForm();
   const cfg = LOTTERY_LABELS[lottery];
   const name = lottery === "ssq" ? "双色球" : (lottery === "dlt" ? "大乐透" : "香港六合彩");
   document.title = name + " - 彩票数据平台";
@@ -312,6 +329,47 @@ async function doHotCold() {
   }
 }
 
+/* ====== 预测表单：按彩种官方玩法动态切换 ====== */
+const CN_NUM = ["一","二","三","四","五","六","七","八","九","十"];
+
+function updatePredictForm() {
+  const cfg = LOTTERY_LABELS[currentLottery] || {};
+  const kind = cfg.betKind || "lotto";
+  const show = (id, on) => { const el = $(id); if (el) el.style.display = on ? "" : "none"; };
+  const isLotto = kind === "lotto", isKeno = kind === "keno", isDigital = kind === "digital";
+
+  show("row-dantuo-count", isLotto || isKeno);
+  show("row-dantuo-nums", isLotto || isKeno);
+  show("row-play", isKeno);
+  show("row-pos", isDigital);
+  show("row-nodantuo", isDigital);
+
+  const dc = $("predict-dan-count");
+  if (dc) dc.max = isKeno ? 9 : (cfg.maxDan || 0);
+
+  if (isKeno && $("predict-play") && !$("predict-play").options.length) {
+    (cfg.plays || []).forEach(p => {
+      const o = document.createElement("option");
+      o.value = p;
+      o.textContent = "选" + (CN_NUM[p - 1] || p);
+      if (p === 10) o.selected = true;
+      $("predict-play").appendChild(o);
+    });
+  }
+
+  if (isDigital && $("pos-inputs")) {
+    const box = $("pos-inputs");
+    if (box.dataset.lottery !== currentLottery) {
+      box.dataset.lottery = currentLottery;
+      box.innerHTML = (cfg.positions || []).map((p, i) =>
+        `<span style="font-size:13px;line-height:32px">${p[0]}</span>` +
+        `<input type="text" class="pos-dan" data-idx="${i}" ` +
+        `placeholder="${p[1]}-${p[2]}" style="width:90px">`
+      ).join("");
+    }
+  }
+}
+
 /* ====== 号码预测 ====== */
 async function doPredict() {
   const range = $("predict-range").value;
@@ -324,30 +382,73 @@ async function doPredict() {
     .join(",");
   if (!methods) { showMsg("predict-result", "请至少选择一种预测方法"); return; }
 
-  const dan = $("predict-dan").value.trim();
-  const tuo = $("predict-tuo").value.trim();
+  const cfg = LOTTERY_LABELS[currentLottery];
+  const kind = cfg.betKind || "lotto";
+  const dan = $("predict-dan") ? $("predict-dan").value.trim() : "";
+  const tuo = $("predict-tuo") ? $("predict-tuo").value.trim() : "";
+  const danCount = $("predict-dan-count") ? (parseInt($("predict-dan-count").value, 10) || 0) : 0;
+  const tuoCount = $("predict-tuo-count") ? (parseInt($("predict-tuo-count").value, 10) || 0) : 0;
+  const play = ($("predict-play") && kind === "keno") ? $("predict-play").value : "";
+
+  // 数字型：按位收集候选数字，位与位之间用 "|" 分隔
+  let posDan = "";
+  if (kind === "digital") {
+    posDan = Array.from(qsa(".pos-dan")).map(el => el.value.trim()).join("|");
+  }
 
   const container = $("predict-result");
   container.innerHTML = "<p>分析中...</p>";
   try {
-    const danParam = dan ? `&dan=${encodeURIComponent(dan)}` : "";
-    const tuoParam = tuo ? `&tuo=${encodeURIComponent(tuo)}` : "";
-    const data = await api("GET",
-      `/analysis/${currentLottery}/predict?range=${range}&methods=${methods}&count=${count}${danParam}${tuoParam}`);
-    const cfg = LOTTERY_LABELS[currentLottery];
+    let qs = `range=${range}&methods=${methods}&count=${count}`;
+    if (dan) qs += `&dan=${encodeURIComponent(dan)}`;
+    if (tuo) qs += `&tuo=${encodeURIComponent(tuo)}`;
+    if (kind !== "digital") {
+      if (danCount > 0) qs += `&danCount=${danCount}`;
+      if (tuoCount > 0) qs += `&tuoCount=${tuoCount}`;
+    }
+    if (kind === "keno" && play) qs += `&play=${play}`;
+    if (posDan) qs += `&posDan=${encodeURIComponent(posDan)}`;
+    const data = await api("GET", `/analysis/${currentLottery}/predict?${qs}`);
     const methodColors = {hot:"#e74c3c", cold:"#3498db", mix:"#27ae60", random:"#f39c12",
-      whot:"#e67e22", oe:"#9b59b6", bs:"#1abc9c", sum:"#34495e", markov:"#e84393", smart:"#2c3e50"};
+      whot:"#e67e22", oe:"#9b59b6", bs:"#1abc9c", sum:"#34495e", markov:"#e84393", smart:"#2c3e50",
+      fushi:"#16a085"};
+
+    const unit = data.unit_price || 2;
+    const totalCnt = data.total_bet_count || 0;
+    const totalAmt = data.total_bet_amount || 0;
 
     // 每种方法的结果卡片
     let html = `<div class="disclaimer" style="text-align:left;margin:0 0 12px;padding:8px 12px;background:#fff3cd;border-radius:6px;font-size:13px;color:#856404">
       ${esc(data.disclaimer)}</div>
-      <p style="margin-bottom:12px;font-size:14px;color:#555">基于 <strong>${data.total_periods}</strong> 期数据分析 · 共 <strong>${data.count}</strong> 注</p>`;
+      <div class="card" style="margin-bottom:12px;background:#eef7ff;border-left:4px solid #2980b9">
+        <div style="font-size:14px;line-height:1.9">
+          <div>投注方式：<strong>${esc(data.bet_mode || "单式/机选")}</strong>
+            ${data.single_count ? ` · 单式号码数 <strong>${data.single_count}</strong>` : ""}
+            ${data.play ? ` · 快乐8 <strong>选${CN_NUM[data.play-1] || data.play}</strong>` : ""}</div>
+          <div>基于 <strong>${data.total_periods}</strong> 期数据分析</div>
+          <div style="font-size:16px;color:#c0392b;margin-top:4px">
+            总注数 <strong>${totalCnt}</strong> 注 · 总投注金额 <strong>${totalAmt}</strong> 元
+            <span style="font-size:12px;color:#888">（${unit} 元/注）</span>
+          </div>
+        </div>
+      </div>`;
 
     for (const [key, r] of Object.entries(data.results)) {
       const color = methodColors[key] || "#666";
       html += `<div class="card" style="margin-bottom:12px;border-left:4px solid ${color}">
         <h4 style="margin-bottom:4px">${esc(r.name)}</h4>
         <p style="font-size:13px;color:#888;margin-bottom:8px">${esc(r.description)}</p>`;
+      // 胆拖/复式：先展示胆码与拖码
+      if (r.dan_nums && r.dan_nums.length) {
+        html += `<div style="margin:4px 0;font-size:13px">胆码（每注必出）：${renderBalls(r.dan_nums, "red")}</div>`;
+      }
+      if (r.tuo_nums && r.tuo_nums.length) {
+        html += `<div style="margin:4px 0;font-size:13px">拖码：${renderBalls(r.tuo_nums, "gold")}</div>`;
+      }
+      if (typeof r.bet_count === "number") {
+        html += `<div style="margin:6px 0;font-size:13px;color:#c0392b">
+          本方法 <strong>${r.bet_count}</strong> 注 · <strong>${r.bet_amount}</strong> 元</div>`;
+      }
       r.bets.forEach((bet, i) => {
         html += `<div class="numbers-row" style="margin:4px 0">
           <span style="font-size:13px;color:#999;min-width:30px">#${i+1}</span>
@@ -355,6 +456,10 @@ async function doPredict() {
           ${currentLottery !== "hk6" ? renderBalls(bet.extra_numbers, cfg.extra === "蓝球" ? "blue" : "gold") : ""}
         </div>`;
       });
+      if (r.bets && r.bets.length >= 200 && r.bet_count > r.bets.length) {
+        html += `<p style="font-size:12px;color:#888;margin-top:6px">
+          共 ${r.bet_count} 注，此处仅展示前 ${r.bets.length} 注。</p>`;
+      }
       html += `</div>`;
     }
 
