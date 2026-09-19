@@ -80,13 +80,18 @@ def build_payload() -> dict:
         for r in hk
     ]
 
-    # 福彩3个：官网全历史
+    # 公共兜底：抓取失败时沿用上一次成功的数据，避免静默清空（尤其 CI 出网受限时）
     prev = _load_previous()
     for code in NEW_FC:
         raw = c.fetch_fc_all(code)
-        draws[code] = [_clean(r) for r in raw]
+        if not raw and prev.get(code):
+            print(f"[sync] 福彩 {code} 本次抓取为空，沿用上一次数据（{len(prev[code])} 期）")
+            draws[code] = prev[code]
+        else:
+            draws[code] = [_clean(r) for r in raw]
 
     # 体彩3个：官网仅最新一期，与旧数据合并以累积历史
+    # （_merge_by_key 已天然兜底：抓取失败时 new 为空，合并结果即等于上一次数据）
     for code in NEW_SP:
         raw = c.fetch_sporttery_latest(code)
         merged = _merge_by_key(prev.get(code, []), [_clean(r) for r in raw])
