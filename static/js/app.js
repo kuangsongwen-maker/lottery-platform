@@ -54,26 +54,26 @@ function showMsg(id, text, isError = true) {
 // betKind: lotto=乐透型(支持胆拖/复式) / digital=数字型(按位选号) / keno=快乐8(先选玩法)
 // positions: 数字型各位名称与取值范围；plays: 快乐8「选几」玩法
 const LOTTERY_LABELS = {
-  ssq: { main: "红球", extra: "蓝球", mainCount: 6, extraCount: 1,
+  ssq: { name: "双色球", main: "红球", extra: "蓝球", mainCount: 6, extraCount: 1,
          betKind: "lotto", maxDan: 5, minTotal: 7 },
-  dlt: { main: "前区", extra: "后区", mainCount: 5, extraCount: 2,
+  dlt: { name: "大乐透", main: "前区", extra: "后区", mainCount: 5, extraCount: 2,
          betKind: "lotto", maxDan: 4, minTotal: 6 },
-  hk6: { main: "搅珠", extra: "特别", mainCount: 6, extraCount: 1,
+  hk6: { name: "香港六合彩", main: "搅珠", extra: "特别", mainCount: 6, extraCount: 1,
          betKind: "lotto", maxDan: 5, minTotal: 7 },
-  kl8: { main: "选号", extra: "特别", mainCount: 20, extraCount: 0,
+  kl8: { name: "快乐8", main: "选号", extra: "特别", mainCount: 20, extraCount: 0,
          betKind: "keno", plays: [1,2,3,4,5,6,7,8,9,10] },
-  "3d": { main: "开奖号", extra: "特别", mainCount: 3, extraCount: 0,
+  "3d": { name: "福彩3D", main: "开奖号", extra: "特别", mainCount: 3, extraCount: 0,
           betKind: "digital",
           positions: [["百位",0,9],["十位",0,9],["个位",0,9]] },
-  qlc: { main: "基本号", extra: "特别", mainCount: 7, extraCount: 1,
+  qlc: { name: "七乐彩", main: "基本号", extra: "特别", mainCount: 7, extraCount: 1,
          betKind: "lotto", maxDan: 6, minTotal: 8 },
-  pls: { main: "开奖号", extra: "特别", mainCount: 3, extraCount: 0,
+  pls: { name: "排列3", main: "开奖号", extra: "特别", mainCount: 3, extraCount: 0,
          betKind: "digital",
          positions: [["百位",0,9],["十位",0,9],["个位",0,9]] },
-  plw: { main: "开奖号", extra: "特别", mainCount: 5, extraCount: 0,
+  plw: { name: "排列5", main: "开奖号", extra: "特别", mainCount: 5, extraCount: 0,
          betKind: "digital",
          positions: [["万位",0,9],["千位",0,9],["百位",0,9],["十位",0,9],["个位",0,9]] },
-  qxc: { main: "开奖号", extra: "特别", mainCount: 7, extraCount: 0,
+  qxc: { name: "七星彩", main: "开奖号", extra: "特别", mainCount: 7, extraCount: 0,
          betKind: "digital",
          positions: [["第1位",0,9],["第2位",0,9],["第3位",0,9],["第4位",0,9],
                      ["第5位",0,9],["第6位",0,9],["第7位",0,14]] },
@@ -178,7 +178,7 @@ async function loadLottery(lottery) {
   searchPage = 1;
   updatePredictForm();
   const cfg = LOTTERY_LABELS[lottery];
-  const name = lottery === "ssq" ? "双色球" : (lottery === "dlt" ? "大乐透" : "香港六合彩");
+  const name = cfg.name || "未知彩种";
   document.title = name + " - 彩票数据平台";
   $("lottery-title").textContent = name;
   // 更新奖金计算器标签
