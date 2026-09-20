@@ -1366,6 +1366,16 @@ STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
 # ========== 静态文件 ==========
 
+@app.middleware("http")
+async def no_cache_frontend(request, call_next):
+    # 前端页面与静态资源强制协商缓存（ETag/304），避免改版后浏览器用旧 JS
+    response = await call_next(request)
+    p = request.url.path
+    if p == "/" or p.startswith("/static"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 @app.get("/")
 def index():
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))
