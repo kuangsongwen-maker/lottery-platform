@@ -1,7 +1,15 @@
 {
-  "updated_at": "2026-10-12T23:41:00Z",
+  "updated_at": "2026-10-13T21:54:42Z",
   "draws": {
     "ssq": [
+      {
+        "draw_number": "26117",
+        "draw_date": "2026-10-13",
+        "numbers": "[4, 11, 14, 22, 26, 27]",
+        "extra_numbers": "[4]",
+        "prize_pool": "931629281",
+        "sales": "332237260"
+      },
       {
         "draw_number": "26116",
         "draw_date": "2026-10-11",
@@ -1705,14 +1713,6 @@
         "extra_numbers": "[12]",
         "prize_pool": "2277473550",
         "sales": "396605082"
-      },
-      {
-        "draw_number": "25054",
-        "draw_date": "2025-05-15",
-        "numbers": "[5, 7, 10, 21, 24, 27]",
-        "extra_numbers": "[16]",
-        "prize_pool": "2224737559",
-        "sales": "374131396"
       }
     ],
     "dlt": [
@@ -3411,25 +3411,9 @@
         "extra_numbers": "[1, 2]",
         "prize_pool": "1329842897",
         "sales": "373248241"
-      },
-      {
-        "draw_number": "25054",
-        "draw_date": "2025-05-17",
-        "numbers": "[3, 12, 16, 21, 29]",
-        "extra_numbers": "[1, 2]",
-        "prize_pool": "1305673258",
-        "sales": "400498726"
       }
     ],
     "hk6": [
-      {
-        "draw_number": "",
-        "draw_date": "2025-02-06",
-        "numbers": "[1, 4, 18, 25, 38, 45]",
-        "extra_numbers": "[23]",
-        "prize_pool": "0",
-        "sales": "0"
-      },
       {
         "draw_number": "",
         "draw_date": "2025-02-08",
@@ -5259,6 +5243,14 @@
         "draw_date": "2026-10-10",
         "numbers": "[12, 14, 20, 33, 34, 37]",
         "extra_numbers": "[31]",
+        "prize_pool": "0",
+        "sales": "0"
+      },
+      {
+        "draw_number": "",
+        "draw_date": "2026-10-13",
+        "numbers": "[3, 5, 9, 17, 21, 26]",
+        "extra_numbers": "[38]",
         "prize_pool": "0",
         "sales": "0"
       }
