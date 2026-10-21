@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-10-20T20:44:52Z",
+  "updated_at": "2026-10-21T20:45:14Z",
   "draws": {
     "ssq": [
       {
@@ -1716,6 +1716,14 @@
       }
     ],
     "dlt": [
+      {
+        "draw_number": "26120",
+        "draw_date": "2026-10-21",
+        "numbers": "[1, 6, 10, 15, 32]",
+        "extra_numbers": "[3, 4]",
+        "prize_pool": "825893884",
+        "sales": "314954142"
+      },
       {
         "draw_number": "26119",
         "draw_date": "2026-10-19",
