@@ -1,14 +1,22 @@
 {
-  "updated_at": "2026-11-02T23:57:35Z",
+  "updated_at": "2026-11-03T22:25:04Z",
   "draws": {
     "ssq": [
+      {
+        "draw_number": "26126",
+        "draw_date": "2026-11-03",
+        "numbers": "[9, 10, 13, 22, 29, 32]",
+        "extra_numbers": "[12]",
+        "prize_pool": "1074322050",
+        "sales": "342910496"
+      },
       {
         "draw_number": "26125",
         "draw_date": "2026-11-01",
         "numbers": "[4, 6, 10, 15, 26, 27]",
         "extra_numbers": "[11]",
-        "prize_pool": "0",
-        "sales": "0"
+        "prize_pool": "1044117721",
+        "sales": "374042920"
       },
       {
         "draw_number": "26124",
@@ -1705,14 +1713,6 @@
         "extra_numbers": "[16]",
         "prize_pool": "2388057766",
         "sales": "389225746"
-      },
-      {
-        "draw_number": "25063",
-        "draw_date": "2025-06-05",
-        "numbers": "[2, 19, 21, 22, 28, 30]",
-        "extra_numbers": "[1]",
-        "prize_pool": "2377447244",
-        "sales": "366105242"
       }
     ],
     "dlt": [
@@ -3411,14 +3411,6 @@
         "extra_numbers": "[1, 8]",
         "prize_pool": "1534694450",
         "sales": "328463659"
-      },
-      {
-        "draw_number": "25063",
-        "draw_date": "2025-06-07",
-        "numbers": "[5, 18, 26, 29, 32]",
-        "extra_numbers": "[7, 10]",
-        "prize_pool": "1482278557",
-        "sales": "353640087"
       }
     ],
     "hk6": [
