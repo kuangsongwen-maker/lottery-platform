@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-11-12T22:48:05Z",
+  "updated_at": "2026-11-13T22:44:52Z",
   "draws": {
     "ssq": [
       {
@@ -1713,14 +1713,6 @@
         "extra_numbers": "[7]",
         "prize_pool": "2290992555",
         "sales": "356576372"
-      },
-      {
-        "draw_number": "25067",
-        "draw_date": "2025-06-15",
-        "numbers": "[1, 5, 10, 17, 20, 22]",
-        "extra_numbers": "[5]",
-        "prize_pool": "2377972199",
-        "sales": "389127714"
       }
     ],
     "dlt": [
@@ -3419,14 +3411,6 @@
         "extra_numbers": "[4, 10]",
         "prize_pool": "1628402090",
         "sales": "318966997"
-      },
-      {
-        "draw_number": "25067",
-        "draw_date": "2025-06-16",
-        "numbers": "[6, 10, 12, 21, 22]",
-        "extra_numbers": "[1, 6]",
-        "prize_pool": "1588528359",
-        "sales": "321766533"
       }
     ],
     "hk6": [
